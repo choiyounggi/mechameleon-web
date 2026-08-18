@@ -111,17 +111,6 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
     }
   });
 
-  it('returns a 501 NOT_IMPLEMENTED stub response for the capture route', async () => {
-    const res = await fetch(`${baseUrl}/api/capture`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: 'https://example.com' }),
-    });
-    expect(res.status).toBe(501);
-    const body = await res.json();
-    expect(body.error.code).toBe('NOT_IMPLEMENTED');
-  });
-
   it('acks BAD_PAYLOAD for an invalid room:create payload', async () => {
     const client = connect();
     try {
