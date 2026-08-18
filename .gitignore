@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env*
+.orchestration/
+.worktrees/
+*.log
+.DS_Store
+data/screenshots/
