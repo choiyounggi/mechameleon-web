@@ -3,6 +3,7 @@ import { createAppContext } from './net';
 import { createPhaseRouter } from './phases';
 import './lobby';
 import './hide';
+import { initSeek } from './seek';
 
 const ctx = createAppContext();
 const root = document.getElementById('root');
@@ -11,6 +12,7 @@ if (!root) {
 }
 
 const router = createPhaseRouter(root, ctx);
+initSeek(ctx);
 
 ctx.socket.on('room:state', (state) => {
   ctx.state.room = state;
