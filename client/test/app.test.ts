@@ -78,3 +78,19 @@ describe('bootstrap (regression: first visitor saw a blank screen)', () => {
     expect(root.innerHTML).not.toBe('');
   });
 });
+
+describe('phase switch vs lobby listener (regression: lobby repainted over the hide screen)', () => {
+  it('does not let the just-unmounted lobby repaint after a same-tick phase switch', () => {
+    const { ctx, fire } = makeCtx();
+    const root = document.createElement('div');
+    bootstrap(root, ctx);
+    expect(root.textContent).toContain('방 만들기'); // lobby is up
+
+    // One room:state event both unmounts the lobby (router) and — because the
+    // emitter snapshots listeners — still calls the lobby's own handler.
+    fire('room:state', { ...lobbyRoomState(), phase: 'hide' });
+
+    expect(root.textContent).not.toContain('방 만들기');
+    expect(root.textContent).not.toContain('방 목록');
+  });
+});

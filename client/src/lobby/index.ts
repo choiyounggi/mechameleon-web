@@ -388,6 +388,7 @@ export function createLobbyController(): PhaseController {
       async function refreshRooms(): Promise<void> {
         if (ctx.state.playerId && ctx.state.room) return; // in a room — list hidden
         const res = await listRooms(ctx);
+        if (!mounted) return; // resolved after a phase switch — don't repaint
         rooms = res.rooms;
         render();
       }
@@ -433,12 +434,43 @@ export function createLobbyController(): PhaseController {
         });
         wrap.appendChild(startBtn);
 
+        // The start conditions were invisible — a full room with no background
+        // looked like a broken button. Spell them out.
+        if (!canStart) {
+          const hints = document.createElement('ul');
+          hints.className = 'mc-start-hints';
+          if (host) {
+            const enough = room.players.length >= MIN_PLAYERS;
+            const items: Array<{ ok: boolean; text: string }> = [
+              { ok: enough, text: enough ? `인원 ${room.players.length}명 — 준비 완료` : `인원 ${room.players.length}/${MIN_PLAYERS} — 한 명 더 필요해요` },
+              { ok: room.background !== null, text: room.background !== null ? '배경 준비 완료' : '배경이 필요해요 — 위에서 웹 주소를 가져오세요' },
+            ];
+            for (const item of items) {
+              const li = document.createElement('li');
+              li.className = item.ok ? 'mc-hint-ok' : 'mc-hint-todo';
+              li.textContent = `${item.ok ? '✓' : '•'} ${item.text}`;
+              hints.appendChild(li);
+            }
+          } else {
+            const li = document.createElement('li');
+            li.className = 'mc-hint-todo';
+            li.textContent = '호스트가 배경을 정하고 시작하면 게임이 열려요';
+            hints.appendChild(li);
+          }
+          wrap.appendChild(hints);
+        }
+
         return wrap;
       }
 
       function renderCaptureSection(): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'mc-form';
+
+        const label = document.createElement('div');
+        label.className = 'mc-field-label';
+        label.textContent = '배경 (필수) — 이 웹페이지에 숨게 돼요';
+        wrap.appendChild(label);
 
         const urlInput = document.createElement('input');
         urlInput.type = 'text';
@@ -520,20 +552,33 @@ export function createLobbyController(): PhaseController {
         if (result.ok) {
           captureState = { status: 'success', background: result.background };
           render();
-          await setBackground(ctx, result.background);
+          const applied = await setBackground(ctx, result.background);
+          if (!applied.ok) {
+            // A silently-ignored rejection here is exactly how the relative-
+            // imageUrl bug stayed invisible — surface it.
+            captureState = { status: 'error', message: '배경 적용이 거부됐어요 — 다시 시도해 주세요' };
+            render();
+          }
         } else {
           captureState = { status: 'error', message: captureErrorMessage(result.code) };
           render();
         }
       }
 
+      // socket.io (EventEmitter) snapshots the listener list when an event
+      // fires, so when this same room:state event unmounts the lobby (phase
+      // switch), this handler still runs once AFTER unmount — without the
+      // guard it repaints the lobby right over the newly mounted phase screen.
+      let mounted = true;
       function onRoomState(): void {
+        if (!mounted) return;
         render();
       }
       ctx.socket.on('room:state', onRoomState);
       void refreshRooms();
       pollTimer = window.setInterval(() => void refreshRooms(), ROOM_LIST_POLL_MS);
       cleanup = () => {
+        mounted = false;
         ctx.socket.off('room:state', onRoomState);
         if (pollTimer !== null) window.clearInterval(pollTimer);
       };

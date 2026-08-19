@@ -1,0 +1,13 @@
+import { io } from 'socket.io-client';
+const url = 'http://localhost:3000';
+const host = io(url); const m1 = io(url); const m2 = io(url);
+const states = [];
+host.on('room:state', (s) => states.push(s));
+const create = await new Promise(r => host.emit('room:create', { nickname: '호스트', roomName: '재현', isPrivate: false }, r));
+await new Promise(r => m1.emit('room:join', { code: create.code, nickname: '멤버1' }, r));
+await new Promise(r => m2.emit('room:join', { code: create.code, nickname: '멤버2' }, r));
+await new Promise(r => setTimeout(r, 300));
+const last = states.at(-1);
+console.log('players:', last.players.length, '| background:', JSON.stringify(last.background), '| phase:', last.phase);
+console.log('canStart-without-bg:', last.players.length >= 2 && last.background !== null);
+host.close(); m1.close(); m2.close();

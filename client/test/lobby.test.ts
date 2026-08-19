@@ -227,3 +227,46 @@ describe('lobby start button', () => {
     controller.unmount();
   });
 });
+
+describe('start-condition hints (regression: full room + no background looked broken)', () => {
+  it('tells the host the background is still missing when players are enough (normal)', () => {
+    const ctx = makeHostCtx(makeRoom({ players: [
+      { id: 'host-1', nickname: 'host', isHost: true },
+      { id: 'g1', nickname: 'a', isHost: false },
+      { id: 'g2', nickname: 'b', isHost: false },
+    ] }));
+    const root = document.createElement('div');
+    const controller = createLobbyController();
+    controller.mount(root, ctx);
+
+    expect(root.textContent).toContain('배경이 필요해요');
+    expect(root.textContent).toContain('인원 3명 — 준비 완료');
+    controller.unmount();
+  });
+
+  it('hides the hints entirely once every condition is met (boundary)', () => {
+    const ctx = makeHostCtx(
+      makeRoom({ background: { imageUrl: '/x.png', width: 1440, height: 900 } }),
+    );
+    const root = document.createElement('div');
+    const controller = createLobbyController();
+    controller.mount(root, ctx);
+
+    expect(root.querySelector('.mc-start-hints')).toBeNull();
+    const startBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '시작')!;
+    expect(startBtn.disabled).toBe(false);
+    controller.unmount();
+  });
+
+  it('shows a waiting message to non-hosts instead of host instructions (role case)', () => {
+    const ctx = makeHostCtx(makeRoom());
+    ctx.state.playerId = 'guest-1';
+    const root = document.createElement('div');
+    const controller = createLobbyController();
+    controller.mount(root, ctx);
+
+    expect(root.textContent).toContain('호스트가 배경을 정하고 시작하면');
+    expect(root.textContent).not.toContain('웹 주소를 가져오세요');
+    controller.unmount();
+  });
+});

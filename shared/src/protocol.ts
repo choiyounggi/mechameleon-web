@@ -141,9 +141,19 @@ export const zRoomJoinReq = z.object({
 export type RoomJoinReq = z.infer<typeof zRoomJoinReq>;
 export type RoomJoinAck = Result<{ playerId: string }>;
 
+// The capture API hands back same-origin relative paths (/api/screenshots/…),
+// so a bare `.url()` (absolute-only) would reject every real background.
+const zImageUrl = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((v) => v.startsWith('/') || /^https?:\/\//.test(v), {
+    message: 'imageUrl must be a same-origin path or http(s) URL',
+  });
+
 export const zSetBackgroundReq = z.object({
   background: z.object({
-    imageUrl: z.string().url(),
+    imageUrl: zImageUrl,
     width: z.number().positive(),
     height: z.number().positive(),
   }),
