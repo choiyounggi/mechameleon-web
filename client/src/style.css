@@ -126,7 +126,8 @@ input:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: var(--space-lg);
-  align-items: start;
+  /* stretch: both boxes share one top and one bottom line */
+  align-items: stretch;
 }
 
 @media (max-width: 700px) {
@@ -145,6 +146,10 @@ input:focus-visible {
   border-radius: var(--radius-card);
   padding: var(--space-md);
   box-shadow: 4px 4px 0 oklch(0% 0 0 / 0.08);
+  /* column flex so inner content can pin to the shared bottom line */
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
 }
 
 .mc-panel > h2 {
@@ -229,6 +234,8 @@ input:focus-visible {
   color: var(--color-ink-soft);
   font-size: 14px;
   text-align: center;
+  /* center inside the stretched panel */
+  margin: auto 0;
   padding: var(--space-lg) 0;
 }
 
@@ -236,6 +243,20 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+}
+
+/* create panel: the form fills the panel and its primary button sits on the
+   shared bottom line, so both boxes end together */
+.mc-panel > .mc-form {
+  flex: 1 1 auto;
+}
+
+.mc-panel > .mc-form > .mc-btn {
+  margin-top: auto;
+}
+
+.mc-room-list {
+  flex: 1 1 auto;
 }
 
 .mc-input,
