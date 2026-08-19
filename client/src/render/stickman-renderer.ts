@@ -69,19 +69,30 @@ function traceBody(
   }
 }
 
-// Offscreen scratch canvas for clipping paint strokes to the body silhouette.
-// Cached module-wide; resized on demand. jsdom has no 2D context — every use is
-// guarded so tests can mount without painting.
-let scratch: HTMLCanvasElement | null = null;
-function scratchCtx(width: number, height: number): CanvasRenderingContext2D | null {
-  if (!scratch) scratch = document.createElement('canvas');
-  if (scratch.width < width || scratch.height < height) {
-    scratch.width = Math.max(width, scratch.width);
-    scratch.height = Math.max(height, scratch.height);
-  }
-  const c = scratch.getContext('2d');
-  return c ?? null;
+// Offscreen scratch canvases for clipping paint strokes to the body
+// silhouette: one for the paint, one for the full-silhouette alpha mask.
+// The mask MUST be applied as a single destination-in drawImage — applying
+// destination-in per body part chains intersections and erases everything.
+// Cached module-wide; resized on demand. jsdom has no 2D context — every use
+// is guarded so tests can mount without painting.
+function makeScratch(): { canvas: HTMLCanvasElement | null; ctx: (w: number, h: number) => CanvasRenderingContext2D | null } {
+  let canvas: HTMLCanvasElement | null = null;
+  return {
+    get canvas() {
+      return canvas;
+    },
+    ctx(width: number, height: number) {
+      if (!canvas) canvas = document.createElement('canvas');
+      if (canvas.width < width || canvas.height < height) {
+        canvas.width = Math.max(width, canvas.width);
+        canvas.height = Math.max(height, canvas.height);
+      }
+      return canvas.getContext('2d');
+    },
+  };
 }
+const paintScratch = makeScratch();
+const maskScratch = makeScratch();
 
 /**
  * MECCHA-style body: a white blob with an ink outline, and the hider's brush
@@ -101,12 +112,24 @@ export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState): v
 
   if (s.strokes.length === 0) return;
 
-  // 3) paint strokes clipped to the silhouette, composited via the scratch
-  //    canvas ('destination-in' keeps only paint that overlaps the body).
+  // 3) paint strokes clipped to the silhouette. The full-body alpha mask is
+  //    built on its own scratch canvas and applied with ONE destination-in
+  //    drawImage — per-part destination-in would intersect repeatedly and
+  //    erase every stroke.
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
-  const paint = scratchCtx(w, h);
-  if (!paint) return;
+  const paint = paintScratch.ctx(w, h);
+  const mask = maskScratch.ctx(w, h);
+  if (!paint || !mask) return;
+
+  mask.clearRect(0, 0, w, h);
+  mask.save();
+  mask.globalCompositeOperation = 'source-over';
+  mask.strokeStyle = '#000';
+  mask.fillStyle = '#000';
+  traceBody(mask, s, 'fill');
+  mask.restore();
+
   paint.clearRect(0, 0, w, h);
   paint.save();
   paint.globalCompositeOperation = 'source-over';
@@ -131,12 +154,10 @@ export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState): v
       paint.stroke();
     }
   }
-  // keep only the paint that lands on the body
+  // single-shot clip: keep only the paint that lands on the body
   paint.globalCompositeOperation = 'destination-in';
-  paint.strokeStyle = '#000';
-  paint.fillStyle = '#000';
-  traceBody(paint, s, 'fill');
+  paint.drawImage(maskScratch.canvas!, 0, 0);
   paint.restore();
 
-  ctx.drawImage(scratch!, 0, 0, w, h, 0, 0, w, h);
+  ctx.drawImage(paintScratch.canvas!, 0, 0, w, h, 0, 0, w, h);
 }
