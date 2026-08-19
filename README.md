@@ -23,6 +23,7 @@ A web-based hide-and-seek game you can sneak in with coworkers during office hou
 git clone https://github.com/choiyounggi/mechameleon-web.git
 cd mechameleon-web
 npm install
+npx playwright install chromium   # first run on a new machine — the capture browser
 npm run build
 PORT=3000 npx tsx server/src/index.ts
 ```

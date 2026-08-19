@@ -23,6 +23,7 @@
 git clone https://github.com/choiyounggi/mechameleon-web.git
 cd mechameleon-web
 npm install
+npx playwright install chromium   # 새 머신 최초 1회 — 배경 캡처용 브라우저
 npm run build
 PORT=3000 npx tsx server/src/index.ts
 ```
