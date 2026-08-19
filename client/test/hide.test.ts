@@ -53,19 +53,6 @@ describe('movement: scale stepping (D8)', () => {
   });
 });
 
-describe('movement: 1-6 part-select keys (D8)', () => {
-  it('maps digit keys 1 and 6 to the first/last part in order (normal)', () => {
-    expect(partForDigitKey('1')).toBe('head');
-    expect(partForDigitKey('6')).toBe('rightLeg');
-  });
-
-  it('rejects out-of-range and non-digit keys (error)', () => {
-    expect(partForDigitKey('7')).toBeNull();
-    expect(partForDigitKey('0')).toBeNull();
-    expect(partForDigitKey('a')).toBeNull();
-  });
-});
-
 describe('eyedropper: pickColor (D9)', () => {
   it('converts the sampled pixel to a hex color (normal)', () => {
     const mockCtx = {
@@ -138,5 +125,38 @@ describe('hide overlay click-through (regression: overlay swallowed eyedropper c
     // canvases[1] is the absolutely-positioned stickman overlay on top
     expect(canvases[1].style.pointerEvents).toBe('none');
     ctrl.unmount();
+  });
+});
+
+describe('brush paint helpers (paint.ts)', () => {
+  const base = { x: 100, y: 200, scale: 2, strokes: [] };
+
+  it('converts image coords to stickman-local coords honoring scale (normal)', async () => {
+    const { imageToLocal } = await import('../src/hide/paint');
+    expect(imageToLocal(base, 110, 180)).toEqual({ x: 5, y: -10 });
+  });
+
+  it('drops drag samples closer than the dedupe distance (boundary)', async () => {
+    const { startStroke, appendPoint } = await import('../src/hide/paint');
+    const stroke = startStroke('#aabb00', { x: 100, y: 200 }, base);
+    expect(appendPoint(stroke, base, 101, 200)).toBe(false); // 0.5 local px — too close
+    expect(appendPoint(stroke, base, 110, 200)).toBe(true); // 5 local px — recorded
+    expect(stroke.points).toHaveLength(2);
+  });
+
+  it('rejects a stroke that would blow the shared paint budget (error)', async () => {
+    const { finishStroke } = await import('../src/hide/paint');
+    const fat = {
+      color: '#aabb00',
+      size: 10,
+      points: Array.from({ length: 500 }, (_, i) => ({ x: i, y: i })),
+    };
+    const full = {
+      ...base,
+      strokes: Array.from({ length: 8 }, () => ({ ...fat, points: [...fat.points] })),
+    };
+    const { state, accepted } = finishStroke(full, { ...fat, points: [...fat.points] });
+    expect(accepted).toBe(false); // 4000 already used
+    expect(state).toBe(full); // untouched on rejection
   });
 });

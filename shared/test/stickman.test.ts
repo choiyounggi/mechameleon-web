@@ -70,13 +70,36 @@ describe('zNickname (boundary/error coverage for zod schemas)', () => {
   });
 });
 
-describe('zStickmanState colors', () => {
-  it('rejects an invalid (non-hex) color format (error case)', () => {
-    const result = zStickmanState.safeParse(stickman({}));
-    expect(result.success).toBe(true);
+describe('zStickmanState strokes (brush model)', () => {
+  const base = { x: 10, y: 20, scale: 1 };
 
-    const bad = stickman();
-    bad.colors = { ...baseColors, head: 'red' };
-    expect(zStickmanState.safeParse(bad).success).toBe(false);
+  it('accepts a valid stroke list (normal case)', () => {
+    const parsed = zStickmanState.safeParse({
+      ...base,
+      strokes: [{ color: '#aabb00', size: 10, points: [{ x: 0, y: -70 }, { x: 4, y: -66 }] }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects an invalid (non-hex) stroke color (error case)', () => {
+    const parsed = zStickmanState.safeParse({
+      ...base,
+      strokes: [{ color: 'red', size: 10, points: [{ x: 0, y: 0 }] }],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects when the shared point budget is exceeded (boundary case)', () => {
+    const many = Array.from({ length: 601 }, (_, i) => ({ x: i, y: i }));
+    const perStroke = zStickmanState.safeParse({ ...base, strokes: [{ color: '#aabb00', size: 10, points: many }] });
+    expect(perStroke.success).toBe(false); // MAX_STROKE_POINTS = 600
+
+    const strokes = Array.from({ length: 8 }, () => ({
+      color: '#aabb00',
+      size: 10,
+      points: Array.from({ length: 501 }, (_, i) => ({ x: i, y: i })),
+    }));
+    const total = zStickmanState.safeParse({ ...base, strokes });
+    expect(total.success).toBe(false); // 8 * 501 > MAX_TOTAL_POINTS = 4000
   });
 });

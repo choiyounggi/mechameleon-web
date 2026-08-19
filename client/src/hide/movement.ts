@@ -1,4 +1,3 @@
-import type { PartKey } from 'shared/protocol';
 import { MAX_SCALE, MIN_SCALE } from 'shared/protocol';
 
 export const ARROW_STEP = 4;
@@ -30,12 +29,4 @@ export function clampScale(scale: number): number {
 
 export function applyMove(pos: Point, dx: number, dy: number, bounds: Bounds): Point {
   return clampPosition(pos.x + dx, pos.y + dy, bounds);
-}
-
-// 1-6 part selection order (D8), matching the shared SEGMENTS draw order's parts.
-export const PART_ORDER: PartKey[] = ['head', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
-
-export function partForDigitKey(key: string): PartKey | null {
-  const idx = Number(key) - 1;
-  return Number.isInteger(idx) && idx >= 0 && idx < PART_ORDER.length ? PART_ORDER[idx] : null;
 }

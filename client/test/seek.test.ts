@@ -9,14 +9,7 @@ const STICKMAN = {
   x: 200,
   y: 150,
   scale: 1,
-  colors: {
-    head: '#111111',
-    torso: '#222222',
-    leftArm: '#333333',
-    rightArm: '#444444',
-    leftLeg: '#555555',
-    rightLeg: '#666666',
-  },
+  strokes: [],
 };
 
 function makeMockSocket() {

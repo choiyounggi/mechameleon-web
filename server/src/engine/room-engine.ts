@@ -62,8 +62,6 @@ interface Room {
   seekTimer: unknown | null;
 }
 
-const DEFAULT_COLOR = '#808080';
-
 /**
  * Pure game state machine for one stickmeleon server: room create/join/leave,
  * lobby->hide->seek->result phase transitions, and seek-click adjudication.
@@ -285,14 +283,7 @@ export class RoomEngine {
       x: Math.round(background.width / 2),
       y: Math.round(background.height / 2),
       scale: 1,
-      colors: {
-        head: DEFAULT_COLOR,
-        torso: DEFAULT_COLOR,
-        leftArm: DEFAULT_COLOR,
-        rightArm: DEFAULT_COLOR,
-        leftLeg: DEFAULT_COLOR,
-        rightLeg: DEFAULT_COLOR,
-      },
+      strokes: [], // unpainted white body — the hider paints with the brush
     };
   }
 

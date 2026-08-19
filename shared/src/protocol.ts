@@ -6,11 +6,18 @@ export type Phase = 'lobby' | 'hide' | 'seek' | 'result';
 
 export type PartKey = 'head' | 'torso' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg';
 
+/** One brush stroke, in stickman-local coordinates (feet-center origin, unscaled). */
+export interface StickmanStroke {
+  color: string; // '#rrggbb'
+  size: number; // brush diameter in local px
+  points: Array<{ x: number; y: number }>;
+}
+
 export interface StickmanState {
   x: number;
   y: number;
   scale: number;
-  colors: Record<PartKey, string>; // color = '#rrggbb'
+  strokes: StickmanStroke[]; // painted over a white base body, clipped to the silhouette
 }
 
 export interface Background {
@@ -93,23 +100,34 @@ export const zRoomCode = z
 
 const zColor = z.string().regex(/^#[0-9a-f]{6}$/i);
 
-const zColors = z.object({
-  head: zColor,
-  torso: zColor,
-  leftArm: zColor,
-  rightArm: zColor,
-  leftLeg: zColor,
-  rightLeg: zColor,
-}) satisfies z.ZodType<Record<PartKey, string>>;
+// Brush-painting bounds — keep the phase:seek payload and per-update cost sane.
+export const MAX_STROKES = 300;
+export const MAX_STROKE_POINTS = 600;
+export const MAX_TOTAL_POINTS = 4000;
+export const MIN_BRUSH = 2;
+export const MAX_BRUSH = 40;
+
+const zStroke = z.object({
+  color: zColor,
+  size: z.number().min(MIN_BRUSH).max(MAX_BRUSH),
+  points: z
+    .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
+    .min(1)
+    .max(MAX_STROKE_POINTS),
+}) satisfies z.ZodType<StickmanStroke>;
 
 // Coordinate range (0..background width/height) is checked server-side against
 // the room's actual background, since that dimension isn't known statically here.
-export const zStickmanState = z.object({
-  x: z.number(),
-  y: z.number(),
-  scale: z.number().positive(),
-  colors: zColors,
-}) satisfies z.ZodType<StickmanState>;
+export const zStickmanState = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    scale: z.number().positive(),
+    strokes: z.array(zStroke).max(MAX_STROKES),
+  })
+  .refine((s) => s.strokes.reduce((n, st) => n + st.points.length, 0) <= MAX_TOTAL_POINTS, {
+    message: 'too many stroke points',
+  }) satisfies z.ZodType<StickmanState>;
 
 export const zCaptureReq = z.object({
   url: z.string().url(),

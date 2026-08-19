@@ -12,14 +12,7 @@ function makeStickman(overrides: Partial<StickmanState> = {}): StickmanState {
     x: 100,
     y: 200,
     scale: 1,
-    colors: {
-      head: '#111111',
-      torso: '#222222',
-      leftArm: '#333333',
-      rightArm: '#444444',
-      leftLeg: '#555555',
-      rightLeg: '#666666',
-    },
+    strokes: [],
     ...overrides,
   };
 }
@@ -34,6 +27,16 @@ function createMockCtx() {
     strokeStyle: '',
     lineWidth: 0,
     lineCap: 'butt' as CanvasLineCap,
+    canvas: { width: 1440, height: 900 },
+    save() {
+      ops.push('save');
+    },
+    restore() {
+      ops.push('restore');
+    },
+    drawImage() {
+      ops.push('drawImage');
+    },
     beginPath() {
       ops.push('beginPath');
     },
@@ -94,42 +97,36 @@ describe('segmentEndpoints', () => {
   });
 });
 
-describe('drawStickman', () => {
-  it('strokes torso with lineWidth = r*2*scale and fills the head as an arc at scale 1 (normal)', () => {
+describe('drawStickman (white base body + outline; strokes clipped via scratch canvas)', () => {
+  it('paints the outline pass first, then the white base body (normal)', () => {
     const { ctx, ops } = createMockCtx();
-    const s = makeStickman({ x: 100, y: 200, scale: 1 });
-
-    drawStickman(ctx, s);
-
-    expect(ops).toContain(`stroke:${s.colors.torso}:12:round`);
-    expect(ops).toContain(`arc:100:${200 - 106}:14`);
-    expect(ops).toContain(`fill:${s.colors.head}`);
+    drawStickman(ctx, makeStickman());
+    const fills = ops.filter((op) => op.startsWith('fill:') || op.startsWith('stroke:'));
+    // first half of the passes carries the ink outline color, second half white
+    expect(fills[0]).toContain('#3b332b');
+    expect(fills[fills.length - 1]).toContain('#ffffff');
   });
 
-  // drawStickman is a total function over SEGMENTS (D10) -- there is no
-  // "invalid part" input to reject, so in place of an error-path test this
-  // verifies the one behavioral contract that would silently break if a part
-  // were skipped, reordered, or double-drawn: back-to-front draw order.
-  it('draws legs, then arms, then torso, then head, in that back-to-front order (no error path; order-contract check)', () => {
+  it('draws body parts legs -> arms -> torso -> head within each pass (order-contract check)', () => {
     const { ctx, ops } = createMockCtx();
-    const s = makeStickman();
+    drawStickman(ctx, makeStickman());
+    // head is the only arc; it must come after every line stroke of its pass
+    const firstPass = ops.slice(0, ops.findIndex((op, i) => i > 0 && op.startsWith('arc')) + 1);
+    const arcIndex = firstPass.findIndex((op) => op.startsWith('arc'));
+    const lineIndexes = firstPass
+      .map((op, i) => (op.startsWith('moveTo') ? i : -1))
+      .filter((i) => i >= 0);
+    expect(arcIndex).toBeGreaterThan(Math.max(...lineIndexes));
+  });
 
-    drawStickman(ctx, s);
-
-    const strokeOrder = ops
-      .filter((op) => op.startsWith('stroke:'))
-      .map((op) => op.split(':')[1]);
-    const fillOps = ops.filter((op) => op.startsWith('fill:'));
-
-    expect(strokeOrder).toEqual([
-      s.colors.leftLeg,
-      s.colors.rightLeg,
-      s.colors.leftArm,
-      s.colors.rightArm,
-      s.colors.torso,
-    ]);
-    // head is filled, and only after every limb + torso stroke has happened
-    expect(fillOps).toEqual([`fill:${s.colors.head}`]);
-    expect(ops.indexOf(fillOps[0])).toBeGreaterThan(ops.lastIndexOf(`stroke:${s.colors.torso}:12:round`));
+  it('skips the paint layer gracefully when no 2D scratch context exists (jsdom boundary)', () => {
+    const { ctx, ops } = createMockCtx();
+    const painted = makeStickman({
+      strokes: [{ color: '#ff0000', size: 10, points: [{ x: 0, y: -70 }, { x: 5, y: -60 }] }],
+    });
+    // jsdom: document.createElement('canvas').getContext -> null, so the
+    // renderer must fall back to the unpainted body without throwing.
+    expect(() => drawStickman(ctx, painted)).not.toThrow();
+    expect(ops.some((op) => op === 'drawImage')).toBe(false);
   });
 });

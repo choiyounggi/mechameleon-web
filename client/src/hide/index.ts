@@ -1,19 +1,12 @@
-import type { PartKey, StickmanState } from 'shared/protocol';
+import type { StickmanState, StickmanStroke } from 'shared/protocol';
 import type { AppContext } from '../net';
 import { createHideUpdateSender, hideConfirm } from '../net';
 import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { pickColor } from './eyedropper';
-import {
-  ARROW_STEP,
-  PART_ORDER,
-  SCALE_STEP,
-  SHIFT_ARROW_STEP,
-  applyMove,
-  clampScale,
-  partForDigitKey,
-} from './movement';
+import { ARROW_STEP, SCALE_STEP, SHIFT_ARROW_STEP, applyMove, clampScale } from './movement';
+import { DEFAULT_BRUSH_COLOR, EYEDROPPER_KEY, appendPoint, finishStroke, startStroke } from './paint';
 import { formatRemaining, remainingMs } from './timer';
 
 interface CleanupHolder {
@@ -63,42 +56,26 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   }
   const { background, endsAt } = payload;
 
-  let selectedPart: PartKey = 'head';
   let stickman: StickmanState = {
     x: background.width / 2,
     y: background.height / 2,
     scale: 1,
-    colors: {
-      head: '#000000',
-      torso: '#000000',
-      leftArm: '#000000',
-      rightArm: '#000000',
-      leftLeg: '#000000',
-      rightLeg: '#000000',
-    },
+    strokes: [],
   };
+  let currentColor = DEFAULT_BRUSH_COLOR;
+  let activeStroke: StickmanStroke | null = null;
 
   const toolbar = document.createElement('div');
-  const partsWrap = document.createElement('div');
-  const partButtons = new Map<PartKey, HTMLButtonElement>();
+  toolbar.className = 'mc-hide-toolbar';
 
-  function selectPart(part: PartKey): void {
-    selectedPart = part;
-    for (const [p, btn] of partButtons) {
-      btn.setAttribute('aria-pressed', String(p === selectedPart));
-    }
-  }
+  const swatch = document.createElement('span');
+  swatch.className = 'mc-swatch';
+  swatch.setAttribute('aria-label', '현재 붓 색');
+  swatch.style.background = currentColor;
 
-  PART_ORDER.forEach((part, i) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = String(i + 1);
-    btn.setAttribute('aria-label', part);
-    btn.setAttribute('aria-pressed', String(part === selectedPart));
-    btn.addEventListener('click', () => selectPart(part));
-    partButtons.set(part, btn);
-    partsWrap.appendChild(btn);
-  });
+  const hint = document.createElement('span');
+  hint.className = 'mc-hide-hint';
+  hint.textContent = '드래그: 색칠 · ⌥Alt+클릭: 스포이드 · 방향키: 이동 · +/-: 크기';
 
   const timerEl = document.createElement('span');
   const errorEl = document.createElement('div');
@@ -110,7 +87,7 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     void hideConfirm(ctx);
   });
 
-  toolbar.append(partsWrap, timerEl, errorEl, confirmBtn);
+  toolbar.append(swatch, hint, timerEl, errorEl, confirmBtn);
   root.appendChild(toolbar);
 
   const container = document.createElement('div');
@@ -152,9 +129,24 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   function redraw(): void {
     if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    drawStickman(overlayCtx, stickman);
+    const preview = activeStroke ? { ...stickman, strokes: [...stickman.strokes, activeStroke] } : stickman;
+    drawStickman(overlayCtx, preview);
   }
   redraw();
+
+  function endActiveStroke(): void {
+    if (!activeStroke) return;
+    const { state, accepted } = finishStroke(stickman, activeStroke);
+    activeStroke = null;
+    if (accepted) {
+      stickman = state;
+      errorEl.textContent = '';
+      sendUpdate();
+    } else {
+      errorEl.textContent = '물감 한도에 도달했어요';
+    }
+    redraw();
+  }
 
   function followScroll(): void {
     const viewLeft = container.scrollLeft;
@@ -184,6 +176,7 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
       const step = e.shiftKey ? SHIFT_ARROW_STEP : ARROW_STEP;
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+      endActiveStroke();
       const next = applyMove(stickman, dx, dy, bounds);
       stickman = { ...stickman, x: next.x, y: next.y };
       redraw();
@@ -193,6 +186,7 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
       return;
     }
     if (e.key === '+' || e.key === '=') {
+      endActiveStroke();
       stickman = { ...stickman, scale: clampScale(stickman.scale + SCALE_STEP) };
       redraw();
       sendUpdate();
@@ -200,36 +194,57 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
       return;
     }
     if (e.key === '-') {
+      endActiveStroke();
       stickman = { ...stickman, scale: clampScale(stickman.scale - SCALE_STEP) };
       redraw();
       sendUpdate();
       e.preventDefault();
       return;
     }
-    const part = partForDigitKey(e.key);
-    if (part) {
-      selectPart(part);
-      e.preventDefault();
-    }
   }
   window.addEventListener('keydown', onKeydown);
 
-  function onCanvasClick(e: MouseEvent): void {
-    if (!bgCtx) {
-      errorEl.textContent = '이미지를 읽을 수 없어요';
+  // eyedropper affordance while Alt is held
+  function onAltDown(e: KeyboardEvent): void {
+    if (e.key === EYEDROPPER_KEY) bgCanvas.style.cursor = 'copy';
+  }
+  function onAltUp(e: KeyboardEvent): void {
+    if (e.key === EYEDROPPER_KEY) bgCanvas.style.cursor = 'crosshair';
+  }
+  window.addEventListener('keydown', onAltDown);
+  window.addEventListener('keyup', onAltUp);
+  bgCanvas.style.cursor = 'crosshair';
+
+  function onPointerDown(e: MouseEvent): void {
+    if (e.altKey) {
+      // 스포이드: Alt(⌥)를 누른 채 클릭한 지점의 배경색을 붓 색으로
+      if (!bgCtx) {
+        errorEl.textContent = '이미지를 읽을 수 없어요';
+        return;
+      }
+      const outcome = pickColor(bgCtx, e.offsetX, e.offsetY);
+      if (outcome.ok) {
+        currentColor = outcome.hex;
+        swatch.style.background = currentColor;
+        errorEl.textContent = '';
+      } else {
+        errorEl.textContent = '이미지를 읽을 수 없어요';
+      }
       return;
     }
-    const outcome = pickColor(bgCtx, e.offsetX, e.offsetY);
-    if (outcome.ok) {
-      errorEl.textContent = '';
-      stickman = { ...stickman, colors: { ...stickman.colors, [selectedPart]: outcome.hex } };
-      redraw();
-      sendUpdate();
-    } else {
-      errorEl.textContent = '이미지를 읽을 수 없어요';
-    }
+    activeStroke = startStroke(currentColor, { x: e.offsetX, y: e.offsetY }, stickman);
+    redraw();
   }
-  bgCanvas.addEventListener('click', onCanvasClick);
+  function onPointerMove(e: MouseEvent): void {
+    if (!activeStroke) return;
+    if (appendPoint(activeStroke, stickman, e.offsetX, e.offsetY)) redraw();
+  }
+  function onPointerUp(): void {
+    endActiveStroke();
+  }
+  bgCanvas.addEventListener('mousedown', onPointerDown);
+  bgCanvas.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
 
   function tick(): void {
     timerEl.textContent = formatRemaining(remainingMs(endsAt, Date.now()));
@@ -239,7 +254,11 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
 
   cleanupHolder.cleanup = () => {
     window.removeEventListener('keydown', onKeydown);
-    bgCanvas.removeEventListener('click', onCanvasClick);
+    window.removeEventListener('keydown', onAltDown);
+    window.removeEventListener('keyup', onAltUp);
+    window.removeEventListener('mouseup', onPointerUp);
+    bgCanvas.removeEventListener('mousedown', onPointerDown);
+    bgCanvas.removeEventListener('mousemove', onPointerMove);
     window.clearInterval(intervalId);
     sender.cancel();
   };

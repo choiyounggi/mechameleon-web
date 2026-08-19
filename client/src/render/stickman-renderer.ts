@@ -24,31 +24,119 @@ export function segmentEndpoints(s: StickmanState): SegmentEndpoint[] {
   }));
 }
 
-// Back-to-front draw order (D10) so limbs tuck behind the torso and the head
-// sits on top.
+// Back-to-front draw order so limbs tuck behind the torso and the head on top.
 const DRAW_ORDER: PartKey[] = ['leftLeg', 'rightLeg', 'leftArm', 'rightArm', 'torso', 'head'];
 
-export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState): void {
-  const byPart = new Map(segmentEndpoints(s).map((e) => [e.part, e]));
+const BODY_BASE = '#ffffff';
+const BODY_OUTLINE = '#3b332b';
+const OUTLINE_WIDTH = 2.5;
 
+/** Paints the body silhouette (all capsules + head) onto ctx with the current styles. */
+function traceBody(
+  ctx: CanvasRenderingContext2D,
+  s: StickmanState,
+  mode: 'fill' | 'outline',
+  radiusPad = 0,
+): void {
+  const byPart = new Map(segmentEndpoints(s).map((e) => [e.part, e]));
   for (const part of DRAW_ORDER) {
     const seg = byPart.get(part);
     if (!seg) continue;
-    const color = s.colors[part];
-
     if (part === 'head') {
       ctx.beginPath();
-      ctx.fillStyle = color;
-      ctx.arc(seg.ax, seg.ay, seg.r, 0, Math.PI * 2);
-      ctx.fill();
+      if (mode === 'fill') {
+        ctx.arc(seg.ax, seg.ay, seg.r + radiusPad, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.arc(seg.ax, seg.ay, seg.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     } else {
       ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = seg.r * 2;
       ctx.lineCap = 'round';
-      ctx.moveTo(seg.ax, seg.ay);
-      ctx.lineTo(seg.bx, seg.by);
-      ctx.stroke();
+      if (mode === 'fill') {
+        ctx.lineWidth = (seg.r + radiusPad) * 2;
+        ctx.moveTo(seg.ax, seg.ay);
+        ctx.lineTo(seg.bx, seg.by);
+        ctx.stroke();
+      } else {
+        ctx.lineWidth = seg.r * 2;
+        ctx.moveTo(seg.ax, seg.ay);
+        ctx.lineTo(seg.bx, seg.by);
+        ctx.stroke();
+      }
     }
   }
+}
+
+// Offscreen scratch canvas for clipping paint strokes to the body silhouette.
+// Cached module-wide; resized on demand. jsdom has no 2D context — every use is
+// guarded so tests can mount without painting.
+let scratch: HTMLCanvasElement | null = null;
+function scratchCtx(width: number, height: number): CanvasRenderingContext2D | null {
+  if (!scratch) scratch = document.createElement('canvas');
+  if (scratch.width < width || scratch.height < height) {
+    scratch.width = Math.max(width, scratch.width);
+    scratch.height = Math.max(height, scratch.height);
+  }
+  const c = scratch.getContext('2d');
+  return c ?? null;
+}
+
+/**
+ * MECCHA-style body: a white blob with an ink outline, and the hider's brush
+ * strokes (stickman-local coords) painted on top, clipped to the silhouette.
+ */
+export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState): void {
+  // 1) outline pass (slightly fatter dark body behind the white fill)
+  ctx.save();
+  ctx.strokeStyle = BODY_OUTLINE;
+  ctx.fillStyle = BODY_OUTLINE;
+  traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
+  // 2) white base body
+  ctx.strokeStyle = BODY_BASE;
+  ctx.fillStyle = BODY_BASE;
+  traceBody(ctx, s, 'fill');
+  ctx.restore();
+
+  if (s.strokes.length === 0) return;
+
+  // 3) paint strokes clipped to the silhouette, composited via the scratch
+  //    canvas ('destination-in' keeps only paint that overlaps the body).
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const paint = scratchCtx(w, h);
+  if (!paint) return;
+  paint.clearRect(0, 0, w, h);
+  paint.save();
+  paint.globalCompositeOperation = 'source-over';
+  for (const stroke of s.strokes) {
+    paint.strokeStyle = stroke.color;
+    paint.fillStyle = stroke.color;
+    paint.lineWidth = stroke.size * s.scale;
+    paint.lineCap = 'round';
+    paint.lineJoin = 'round';
+    paint.beginPath();
+    const [first, ...rest] = stroke.points;
+    const fx = s.x + first.x * s.scale;
+    const fy = s.y + first.y * s.scale;
+    if (rest.length === 0) {
+      paint.arc(fx, fy, (stroke.size * s.scale) / 2, 0, Math.PI * 2);
+      paint.fill();
+    } else {
+      paint.moveTo(fx, fy);
+      for (const pt of rest) {
+        paint.lineTo(s.x + pt.x * s.scale, s.y + pt.y * s.scale);
+      }
+      paint.stroke();
+    }
+  }
+  // keep only the paint that lands on the body
+  paint.globalCompositeOperation = 'destination-in';
+  paint.strokeStyle = '#000';
+  paint.fillStyle = '#000';
+  traceBody(paint, s, 'fill');
+  paint.restore();
+
+  ctx.drawImage(scratch!, 0, 0, w, h, 0, 0, w, h);
 }
