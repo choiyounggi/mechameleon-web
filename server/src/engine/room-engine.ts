@@ -12,6 +12,7 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   type RoomStatePublic,
+  type RoomSummary,
   SEEK_MS,
   type ServerToClientEvents,
   type StickmanState,
@@ -47,6 +48,9 @@ interface Player {
 
 interface Room {
   code: string;
+  name: string;
+  isPrivate: boolean;
+  password: string | null;
   phase: 'lobby' | 'hide' | 'seek' | 'result';
   players: Player[]; // join order; players[0] is host unless host left and was reassigned
   hiderId: string | null;
@@ -79,11 +83,17 @@ export class RoomEngine {
     this.emit = deps.emit;
   }
 
-  createRoom(nickname: string): { code: string; playerId: string } {
+  createRoom(
+    nickname: string,
+    opts: { name: string; isPrivate: boolean; password?: string },
+  ): { code: string; playerId: string } {
     const code = this.generateRoomCode();
     const playerId = randomUUID();
     const room: Room = {
       code,
+      name: opts.name,
+      isPrivate: opts.isPrivate,
+      password: opts.isPrivate ? (opts.password ?? null) : null,
       phase: 'lobby',
       players: [{ id: playerId, nickname, isHost: true }],
       hiderId: null,
@@ -100,11 +110,14 @@ export class RoomEngine {
     return { code, playerId };
   }
 
-  join(code: string, nickname: string): Result<{ playerId: string }> {
+  join(code: string, nickname: string, password?: string): Result<{ playerId: string }> {
     const room = this.rooms.get(code);
     if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
     if (room.phase !== 'lobby') return { ok: false, code: 'BAD_PHASE' };
     if (room.players.length >= MAX_PLAYERS) return { ok: false, code: 'ROOM_FULL' };
+    if (room.isPrivate && room.password !== null && password !== room.password) {
+      return { ok: false, code: 'WRONG_PASSWORD' };
+    }
 
     const playerId = randomUUID();
     room.players.push({ id: playerId, nickname, isHost: false });
@@ -235,6 +248,18 @@ export class RoomEngine {
     if (room) this.broadcastState(room);
   }
 
+  /** Public room-list rows for the lobby browser (insertion order). */
+  listRooms(): RoomSummary[] {
+    return [...this.rooms.values()].map((room) => ({
+      code: room.code,
+      name: room.name,
+      isPrivate: room.isPrivate,
+      playerCount: room.players.length,
+      maxPlayers: MAX_PLAYERS,
+      phase: room.phase,
+    }));
+  }
+
   /** Clears every room's pending timers (D14 graceful shutdown). */
   shutdown(): void {
     for (const room of this.rooms.values()) {
@@ -353,6 +378,8 @@ export class RoomEngine {
     }));
     return {
       code: room.code,
+      name: room.name,
+      isPrivate: room.isPrivate,
       phase: room.phase,
       players,
       background: room.background,

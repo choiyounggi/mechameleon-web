@@ -1,0 +1,46 @@
+/* Hallmark · scope: game UI (lobby redesign) · theme: studied-DNA (source: image — MECCHA CHAMELEON Steam key art, public reference)
+ * DNA: white blob mascot camouflaged in paint · chunky per-letter rainbow display · elegant serif numerals ·
+ *      keycap chips · bunting flags · warm plaster paper, rainbow reserved for display/accents
+ * paper oklch(96.5% 0.012 85) · ink oklch(28% 0.03 60) · display Black Han Sans · body IBM Plex Sans KR · numerals Playfair Display
+ * studied: yes · Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4
+ */
+:root {
+  /* paper & ink */
+  --color-paper: oklch(96.5% 0.012 85);
+  --color-paper-2: oklch(93% 0.018 80);
+  --color-card: oklch(99% 0.004 90);
+  --color-ink: oklch(28% 0.03 60);
+  --color-ink-soft: oklch(48% 0.02 60);
+  --color-line: oklch(85% 0.015 80);
+
+  /* paint accents (display / chips only — body UI stays calm) */
+  --color-paint-red: oklch(62% 0.2 25);
+  --color-paint-orange: oklch(72% 0.16 55);
+  --color-paint-yellow: oklch(83% 0.14 95);
+  --color-paint-green: oklch(68% 0.16 145);
+  --color-paint-cyan: oklch(76% 0.11 200);
+  --color-paint-violet: oklch(58% 0.17 300);
+  --color-accent: var(--color-paint-green);
+  --color-danger: var(--color-paint-red);
+  --color-focus: oklch(52% 0.15 235);
+  --color-keycap: oklch(90% 0.07 195);
+
+  /* type */
+  --font-display: 'Black Han Sans', 'IBM Plex Sans KR', sans-serif;
+  --font-body: 'IBM Plex Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-numeral: 'Playfair Display', Georgia, serif;
+
+  /* 4pt scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+
+  /* shape & motion */
+  --radius-card: 14px;
+  --radius-chip: 999px;
+  --rule-card: 2px solid var(--color-ink);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-quick: 140ms;
+}

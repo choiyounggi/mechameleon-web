@@ -6,6 +6,7 @@ import type {
   RoomCreateAck,
   RoomJoinAck,
   RoomStatePublic,
+  RoomSummary,
   SeekClickAck,
   ServerToClientEvents,
   StickmanState,
@@ -41,15 +42,32 @@ export function createAppContext(): AppContext {
   };
 }
 
-export function createRoom(ctx: AppContext, nickname: string): Promise<RoomCreateAck> {
+export interface CreateRoomOpts {
+  roomName: string;
+  isPrivate: boolean;
+  password?: string;
+}
+
+export function createRoom(ctx: AppContext, nickname: string, opts: CreateRoomOpts): Promise<RoomCreateAck> {
   return new Promise((resolve) => {
-    ctx.socket.emit('room:create', { nickname }, resolve);
+    ctx.socket.emit('room:create', { nickname, ...opts }, resolve);
   });
 }
 
-export function joinRoom(ctx: AppContext, code: string, nickname: string): Promise<RoomJoinAck> {
+export function joinRoom(
+  ctx: AppContext,
+  code: string,
+  nickname: string,
+  password?: string,
+): Promise<RoomJoinAck> {
   return new Promise((resolve) => {
-    ctx.socket.emit('room:join', { code, nickname }, resolve);
+    ctx.socket.emit('room:join', { code, nickname, password }, resolve);
+  });
+}
+
+export function listRooms(ctx: AppContext): Promise<{ ok: true; rooms: RoomSummary[] }> {
+  return new Promise((resolve) => {
+    ctx.socket.emit('rooms:list', resolve);
   });
 }
 

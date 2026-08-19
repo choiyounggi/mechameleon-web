@@ -83,7 +83,13 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       const parsed = zRoomCreateReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
 
-      const { code, playerId } = withRoomContext(undefined, () => engine.createRoom(parsed.data.nickname));
+      const { code, playerId } = withRoomContext(undefined, () =>
+        engine.createRoom(parsed.data.nickname, {
+          name: parsed.data.roomName,
+          isPrivate: parsed.data.isPrivate,
+          password: parsed.data.password,
+        }),
+      );
       bindPlayer(playerId, code);
       // `createRoom`'s own broadcastState fires before this socket is bound to a
       // player/room, so nothing receives it (see F2, review r1) -- resend now.
@@ -95,9 +101,21 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       const parsed = zRoomJoinReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
 
-      const result = withRoomContext(parsed.data.code, () => engine.join(parsed.data.code, parsed.data.nickname));
-      if (result.ok) bindPlayer(result.playerId, parsed.data.code);
+      const result = withRoomContext(parsed.data.code, () =>
+        engine.join(parsed.data.code, parsed.data.nickname, parsed.data.password),
+      );
+      if (result.ok) {
+        bindPlayer(result.playerId, parsed.data.code);
+        // join()'s own broadcast fired before this socket entered the room —
+        // re-broadcast so the joiner gets the initial state (same class as
+        // the room:create fix, review r1 F2).
+        withRoomContext(parsed.data.code, () => engine.broadcastRoom(parsed.data.code));
+      }
       ack(result);
+    });
+
+    socket.on('rooms:list', (ack) => {
+      ack({ ok: true, rooms: engine.listRooms() });
     });
 
     socket.on('room:setBackground', (req, ack) => {

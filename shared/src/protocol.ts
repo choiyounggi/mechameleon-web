@@ -27,10 +27,22 @@ export interface PlayerPublic {
 
 export interface RoomStatePublic {
   code: string;
+  name: string;
+  isPrivate: boolean;
   phase: Phase;
   players: PlayerPublic[];
   background: Background | null;
   endsAt: number | null;
+}
+
+/** One row of the public room list (lobby browser). */
+export interface RoomSummary {
+  code: string;
+  name: string;
+  isPrivate: boolean;
+  playerCount: number;
+  maxPlayers: number;
+  phase: Phase;
 }
 
 export type Winner = 'hider' | 'seekers';
@@ -62,7 +74,8 @@ export type ErrorCode =
   | 'LOCKED'
   | 'BAD_PAYLOAD'
   | 'NEED_BACKGROUND'
-  | 'NEED_PLAYERS';
+  | 'NEED_PLAYERS'
+  | 'WRONG_PASSWORD';
 
 /** WS ack envelope: `{ok:true, ...}` on success, `{ok:false, code}` on failure. */
 export type Result<T extends object = object> =
@@ -104,11 +117,27 @@ export const zCaptureReq = z.object({
 
 // ---- C->S request/ack payloads ----------------------------------------------
 
-export const zRoomCreateReq = z.object({ nickname: zNickname });
+export const zRoomName = z.string().min(1).max(20);
+export const zRoomPassword = z.string().min(2).max(20);
+
+export const zRoomCreateReq = z
+  .object({
+    nickname: zNickname,
+    roomName: zRoomName,
+    isPrivate: z.boolean(),
+    password: zRoomPassword.optional(),
+  })
+  .refine((req) => !req.isPrivate || req.password !== undefined, {
+    message: 'private rooms require a password',
+  });
 export type RoomCreateReq = z.infer<typeof zRoomCreateReq>;
 export type RoomCreateAck = Result<{ code: string; playerId: string }>;
 
-export const zRoomJoinReq = z.object({ code: zRoomCode, nickname: zNickname });
+export const zRoomJoinReq = z.object({
+  code: zRoomCode,
+  nickname: zNickname,
+  password: zRoomPassword.optional(),
+});
 export type RoomJoinReq = z.infer<typeof zRoomJoinReq>;
 export type RoomJoinAck = Result<{ playerId: string }>;
 
@@ -148,6 +177,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   'room:create': (req: RoomCreateReq, ack: (res: RoomCreateAck) => void) => void;
   'room:join': (req: RoomJoinReq, ack: (res: RoomJoinAck) => void) => void;
+  'rooms:list': (ack: (res: { ok: true; rooms: RoomSummary[] }) => void) => void;
   'room:setBackground': (req: SetBackgroundReq, ack: (res: Result) => void) => void;
   'game:start': (ack: (res: Result) => void) => void;
   'hide:update': (req: HideUpdateReq) => void;

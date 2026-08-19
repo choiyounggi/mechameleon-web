@@ -47,7 +47,7 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
       await Promise.all([waitConnected(host), waitConnected(joiner)]);
 
       const createAck: any = await new Promise((resolve) =>
-        host.emit('room:create', { nickname: 'host' }, resolve),
+        host.emit('room:create', { nickname: 'host', roomName: '몰컴방', isPrivate: false }, resolve),
       );
       expect(createAck.ok).toBe(true);
       const code: string = createAck.code;
@@ -98,7 +98,7 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
 
       const gotState = new Promise<any>((resolve) => host.on('room:state', resolve));
       const createAck: any = await new Promise((resolve) =>
-        host.emit('room:create', { nickname: 'solo-host' }, resolve),
+        host.emit('room:create', { nickname: 'solo-host', roomName: '솔로방', isPrivate: false }, resolve),
       );
       expect(createAck.ok).toBe(true);
 
@@ -115,10 +115,34 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
     const client = connect();
     try {
       await waitConnected(client);
-      const ack = await new Promise((resolve) => client.emit('room:create', { nickname: '' }, resolve));
+      const ack = await new Promise((resolve) => client.emit('room:create', { nickname: '', roomName: 'x', isPrivate: false }, resolve));
       expect(ack).toEqual({ ok: false, code: 'BAD_PAYLOAD' });
     } finally {
       client.close();
+    }
+  });
+
+  it('sends the joiner a room:state right after room:join succeeds', async () => {
+    const host = connect();
+    const joiner = connect();
+    try {
+      const createAck: any = await new Promise((resolve) =>
+        host.emit('room:create', { nickname: 'host', roomName: '입장검증', isPrivate: false }, resolve),
+      );
+      expect(createAck.ok).toBe(true);
+
+      const joinerState = new Promise((resolve) => joiner.once('room:state', resolve));
+      const joinAck: any = await new Promise((resolve) =>
+        joiner.emit('room:join', { code: createAck.code, nickname: 'joiner' }, resolve),
+      );
+      expect(joinAck.ok).toBe(true);
+      const state: any = await joinerState;
+      expect(state.code).toBe(createAck.code);
+      expect(state.players).toHaveLength(2);
+      expect(state.name).toBe('입장검증');
+    } finally {
+      host.disconnect();
+      joiner.disconnect();
     }
   });
 });

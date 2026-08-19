@@ -42,7 +42,7 @@ function hiderIdFrom(events: RecordedEvent[]): string {
 
 /** host creates + a second player joins + host sets a background, room still in lobby. */
 function setupTwoPlayerRoom(engine: RoomEngine) {
-  const { code, playerId: hostId } = engine.createRoom('host');
+  const { code, playerId: hostId } = engine.createRoom('host', PUBLIC_ROOM);
   const joinResult = engine.join(code, 'joiner');
   if (!joinResult.ok) throw new Error('join failed in test setup');
   engine.setBackground(hostId, background);
@@ -56,6 +56,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
+
+const PUBLIC_ROOM = { name: '테스트방', isPrivate: false } as const;
 
 describe('RoomEngine — normal flow', () => {
   it('runs a full round: create -> join -> start -> hideConfirm -> seeker click hit -> game:end', () => {
@@ -88,13 +90,13 @@ describe('RoomEngine — error cases', () => {
 
   it('rejects starting with only 1 player (NEED_PLAYERS)', () => {
     const { engine } = createEngine();
-    const { playerId: hostId } = engine.createRoom('solo');
+    const { playerId: hostId } = engine.createRoom('solo', PUBLIC_ROOM);
     expect(engine.start(hostId)).toEqual({ ok: false, code: 'NEED_PLAYERS' });
   });
 
   it('rejects starting without a background set (NEED_BACKGROUND)', () => {
     const { engine } = createEngine();
-    const { code, playerId: hostId } = engine.createRoom('host');
+    const { code, playerId: hostId } = engine.createRoom('host', PUBLIC_ROOM);
     engine.join(code, 'joiner');
     expect(engine.start(hostId)).toEqual({ ok: false, code: 'NEED_BACKGROUND' });
   });
@@ -206,8 +208,8 @@ describe('RoomEngine — boundary cases', () => {
 
   it('throws after 5 room-code collision retries', () => {
     const { engine } = createEngine(() => 0); // constant rng => same code every attempt
-    engine.createRoom('first');
-    expect(() => engine.createRoom('second')).toThrow('ROOM_CODE_EXHAUSTED');
+    engine.createRoom('first', PUBLIC_ROOM);
+    expect(() => engine.createRoom('second', PUBLIC_ROOM)).toThrow('ROOM_CODE_EXHAUSTED');
   });
 });
 
@@ -294,5 +296,49 @@ describe('RoomEngine — hideUpdate coordinate/scale clamping (review r1 F1)', (
     // x clamps to 0, y clamps to background.height, scale clamps to MIN_SCALE.
     const torsoMidpointAtMinScale = -70 * MIN_SCALE;
     expect(engine.click(seekerId, 0, background.height + torsoMidpointAtMinScale)).toBe('hit');
+  });
+});
+
+describe('RoomEngine — private rooms & room list', () => {
+  it('joins a private room with the correct password (normal case)', () => {
+    const { engine } = createEngine();
+    const { code } = engine.createRoom('host', { name: '비밀방', isPrivate: true, password: '1234' });
+    const result = engine.join(code, 'joiner', '1234');
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a private-room join with a wrong or missing password (error case)', () => {
+    const { engine } = createEngine();
+    const { code } = engine.createRoom('host', { name: '비밀방', isPrivate: true, password: '1234' });
+    const wrong = engine.join(code, 'joiner', '9999');
+    const missing = engine.join(code, 'joiner');
+    expect(wrong).toEqual({ ok: false, code: 'WRONG_PASSWORD' });
+    expect(missing).toEqual({ ok: false, code: 'WRONG_PASSWORD' });
+  });
+
+  it('lists rooms with name, privacy, count and phase; public join ignores password (boundary case)', () => {
+    let n = 0;
+    const { engine } = createEngine(() => ((n += 7) % 31) / 31);
+    const pub = engine.createRoom('a', { name: '공개방', isPrivate: false });
+    engine.createRoom('b', { name: '비밀방', isPrivate: true, password: 'pw' });
+    const publicJoin = engine.join(pub.code, 'c', '아무거나');
+    expect(publicJoin.ok).toBe(true);
+
+    const rooms = engine.listRooms();
+    expect(rooms).toHaveLength(2);
+    const pubRow = rooms.find((r) => r.code === pub.code)!;
+    expect(pubRow).toMatchObject({ name: '공개방', isPrivate: false, playerCount: 2, maxPlayers: MAX_PLAYERS, phase: 'lobby' });
+    const privRow = rooms.find((r) => r.name === '비밀방')!;
+    expect(privRow.isPrivate).toBe(true);
+    // the summary must never leak the password
+    expect(JSON.stringify(rooms)).not.toContain('pw');
+  });
+
+  it('room:state carries name and isPrivate (normal case)', () => {
+    const { engine, events } = createEngine();
+    engine.createRoom('host', { name: '이름표시', isPrivate: true, password: 'pw' });
+    const stateEvent = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(stateEvent.payload).toMatchObject({ name: '이름표시', isPrivate: true });
+    expect(JSON.stringify(stateEvent.payload)).not.toContain('pw');
   });
 });
