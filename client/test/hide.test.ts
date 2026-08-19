@@ -114,3 +114,29 @@ describe('timer: remaining time display (D11)', () => {
     expect(formatRemaining(remainingMs(1_000, 5_000))).toBe('0:00');
   });
 });
+
+describe('hide overlay click-through (regression: overlay swallowed eyedropper clicks)', () => {
+  it('keeps the stickman overlay transparent to pointer events so bgCanvas gets the click', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const ctx = {
+      socket: { emit: () => {}, on: () => {}, off: () => {} },
+      state: {
+        playerId: 'p1',
+        role: 'hider',
+        room: null,
+        hidePayload: {
+          background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
+          endsAt: Date.now() + 60000,
+        },
+      },
+    } as never;
+    ctrl.mount(root, ctx);
+    const canvases = root.querySelectorAll('canvas');
+    expect(canvases).toHaveLength(2);
+    // canvases[1] is the absolutely-positioned stickman overlay on top
+    expect(canvases[1].style.pointerEvents).toBe('none');
+    ctrl.unmount();
+  });
+});

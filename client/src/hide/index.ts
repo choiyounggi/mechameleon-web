@@ -129,22 +129,28 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   overlayCanvas.style.position = 'absolute';
   overlayCanvas.style.left = '0';
   overlayCanvas.style.top = '0';
+  // The eyedropper listens on bgCanvas underneath — without this, the overlay
+  // swallows every real mouse click and painting is impossible.
+  overlayCanvas.style.pointerEvents = 'none';
 
   container.append(bgCanvas, overlayCanvas);
   root.appendChild(container);
 
-  const bgCtx = bgCanvas.getContext('2d')!;
-  const overlayCtx = overlayCanvas.getContext('2d')!;
+  // jsdom (test env) has no Canvas 2D support and returns null here; guard so
+  // mount() stays testable (drawing silently no-ops), same as the seek screen.
+  const bgCtx = bgCanvas.getContext('2d');
+  const overlayCtx = overlayCanvas.getContext('2d');
 
   const img = new Image();
   img.onload = () => {
-    bgCtx.drawImage(img, 0, 0);
+    bgCtx?.drawImage(img, 0, 0);
   };
   img.src = background.imageUrl;
 
   const sender = createHideUpdateSender(ctx);
 
   function redraw(): void {
+    if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     drawStickman(overlayCtx, stickman);
   }
@@ -209,6 +215,10 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   window.addEventListener('keydown', onKeydown);
 
   function onCanvasClick(e: MouseEvent): void {
+    if (!bgCtx) {
+      errorEl.textContent = '이미지를 읽을 수 없어요';
+      return;
+    }
     const outcome = pickColor(bgCtx, e.offsetX, e.offsetY);
     if (outcome.ok) {
       errorEl.textContent = '';
