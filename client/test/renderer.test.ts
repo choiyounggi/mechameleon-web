@@ -119,6 +119,21 @@ describe('drawStickman (white base body + outline; strokes clipped via scratch c
     expect(arcIndex).toBeGreaterThan(Math.max(...lineIndexes));
   });
 
+  it('omits the ink outline entirely in seek style so the camouflage can work (normal: seek)', () => {
+    const { ctx, ops } = createMockCtx();
+    drawStickman(ctx, makeStickman(), 'seek');
+    const draws = ops.filter((op) => op.startsWith('fill:') || op.startsWith('stroke:'));
+    expect(draws.length).toBeGreaterThan(0);
+    expect(draws.some((op) => op.includes('#3b332b'))).toBe(false);
+    expect(draws.every((op) => op.includes('#ffffff'))).toBe(true);
+  });
+
+  it('keeps the ink outline in the default edit style (boundary: default unchanged)', () => {
+    const { ctx, ops } = createMockCtx();
+    drawStickman(ctx, makeStickman());
+    expect(ops.some((op) => op.includes('#3b332b'))).toBe(true);
+  });
+
   it('skips the paint layer gracefully when no 2D scratch context exists (jsdom boundary)', () => {
     const { ctx, ops } = createMockCtx();
     const painted = makeStickman({

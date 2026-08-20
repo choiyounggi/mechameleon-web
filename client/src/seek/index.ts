@@ -108,7 +108,8 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   function redrawOverlay(ripples: ActiveRipple[]): void {
     if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    drawStickman(overlayCtx, stickman);
+    // 'seek' style: no ink outline — the camouflage has to actually work.
+    drawStickman(overlayCtx, stickman, 'seek');
     for (const ripple of ripples) {
       overlayCtx.beginPath();
       overlayCtx.strokeStyle = `${RIPPLE_STROKE} ${ripple.alpha})`;

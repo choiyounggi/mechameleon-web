@@ -95,15 +95,25 @@ const paintScratch = makeScratch();
 const maskScratch = makeScratch();
 
 /**
+ * 'edit' (default): full MECCHA look with the ink outline — used while
+ * painting and on the result reveal, where the body must be easy to see.
+ * 'seek': no outline at all, so a well-painted body genuinely blends into
+ * the background and seekers have to actually search.
+ */
+export type BodyStyle = 'edit' | 'seek';
+
+/**
  * MECCHA-style body: a white blob with an ink outline, and the hider's brush
  * strokes (stickman-local coords) painted on top, clipped to the silhouette.
  */
-export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState): void {
-  // 1) outline pass (slightly fatter dark body behind the white fill)
+export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState, style: BodyStyle = 'edit'): void {
   ctx.save();
-  ctx.strokeStyle = BODY_OUTLINE;
-  ctx.fillStyle = BODY_OUTLINE;
-  traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
+  if (style === 'edit') {
+    // 1) outline pass (slightly fatter dark body behind the white fill)
+    ctx.strokeStyle = BODY_OUTLINE;
+    ctx.fillStyle = BODY_OUTLINE;
+    traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
+  }
   // 2) white base body
   ctx.strokeStyle = BODY_BASE;
   ctx.fillStyle = BODY_BASE;

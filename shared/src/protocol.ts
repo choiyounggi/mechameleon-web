@@ -56,7 +56,7 @@ export type Winner = 'hider' | 'seekers';
 
 // ---- Timer / room constants (D8, D13, D6) ----------------------------------
 
-export const HIDE_MS = 180_000;
+export const HIDE_MS = 60_000;
 export const SEEK_MS = 120_000;
 export const LOCKOUT_MS = 3_000;
 export const MAX_PLAYERS = 8;
