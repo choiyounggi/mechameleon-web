@@ -1,5 +1,6 @@
 import type { Background, StickmanState } from 'shared/protocol';
 import type { AppContext } from '../net';
+import { restartGame } from '../net';
 import type { PhaseController } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { getEndPayload } from './index';
@@ -65,15 +66,33 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
     cleanupHolder.cleanup = mountHighlightCanvas(root, end.stickman, background);
   }
 
+  const buttons = document.createElement('div');
+  const errorEl = document.createElement('div');
+
   const restartBtn = document.createElement('button');
   restartBtn.type = 'button';
-  restartBtn.textContent = '다시 하기';
-  // D8: no server rematch API exists (out of scope) -- restart by reloading
-  // into a fresh room flow.
+  restartBtn.textContent = '다시 시작';
   restartBtn.addEventListener('click', () => {
+    void restartGame(ctx).then((res) => {
+      // BAD_PHASE: someone else already restarted — the room:state broadcast
+      // moves this client to the lobby anyway, so only report other failures.
+      if (!res.ok && res.code !== 'BAD_PHASE') {
+        errorEl.textContent = '다시 시작할 수 없어요';
+      }
+    });
+  });
+
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  leaveBtn.textContent = '나가기';
+  // Reloading drops the socket; the server's disconnect handler removes this
+  // player from the room, and the fresh page lands on the home screen.
+  leaveBtn.addEventListener('click', () => {
     window.location.reload();
   });
-  root.appendChild(restartBtn);
+
+  buttons.append(restartBtn, leaveBtn);
+  root.append(buttons, errorEl);
 }
 
 function createResultController(): PhaseController {

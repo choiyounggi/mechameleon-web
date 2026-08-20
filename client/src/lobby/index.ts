@@ -410,6 +410,14 @@ export function createLobbyController(): PhaseController {
         header.append(title, codeEl);
         wrap.appendChild(header);
 
+        if (ctx.state.abortNotice) {
+          const notice = document.createElement('p');
+          notice.className = 'mc-error';
+          notice.setAttribute('role', 'alert');
+          notice.textContent = ctx.state.abortNotice;
+          wrap.appendChild(notice);
+        }
+
         const list = document.createElement('ul');
         for (const p of room.players) {
           const li = document.createElement('li');

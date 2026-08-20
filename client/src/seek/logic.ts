@@ -6,7 +6,7 @@ export interface SeekEndPayload {
   winner: Winner;
   foundBy?: string;
   stickman: StickmanState | null;
-  reason: 'found' | 'timeout' | 'forfeit';
+  reason: 'found' | 'timeout';
 }
 
 // D3: mirrors the server's `Date.now() < lockedUntil` reject gate exactly, so
@@ -36,12 +36,9 @@ export function applySeekClickAck(ack: SeekClickAck, now: number, lockedUntil: n
   return lockedUntil;
 }
 
-// D8: winner/reason -> displayed result text. forfeit is checked before the
-// winner-specific branches since it applies regardless of which side is
-// recorded as winner.
+// D8: winner/reason -> displayed result text.
 export function resolveResultText(end: SeekEndPayload | null, room: RoomStatePublic | null): string {
   if (end === null) return '게임 종료';
-  if (end.reason === 'forfeit') return '상대가 나갔어요';
   if (end.winner === 'hider') {
     return end.reason === 'timeout' ? '끝까지 못 찾았다…' : '숨은 사람 승리';
   }

@@ -36,7 +36,7 @@ function makeCtx(room: RoomStatePublic): { ctx: AppContext; handlers: Map<string
   const { socket, handlers } = makeMockSocket();
   const ctx = {
     socket: socket as unknown as AppContext['socket'],
-    state: { playerId: 'p2', role: 'seeker' as const, room, hidePayload: null },
+    state: { playerId: 'p2', role: 'seeker' as const, room, hidePayload: null, abortNotice: null },
   };
   return { ctx, handlers };
 }
@@ -104,15 +104,17 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     getPhase('result').unmount();
   });
 
-  it('shows the forfeit text (boundary: forfeit reason)', () => {
+  it('offers both a restart and a leave button on the result screen (normal)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'seekers', stickman: null, reason: 'forfeit' });
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
     const root = document.createElement('div');
 
     getPhase('result').mount(root, ctx);
 
-    expect(root.textContent).toContain('상대가 나갔어요');
+    const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).toContain('다시 시작');
+    expect(labels).toContain('나가기');
 
     getPhase('result').unmount();
   });
@@ -132,13 +134,29 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     freshGetPhase('result').mount(root, ctx);
 
     expect(root.textContent).toContain('게임 종료');
-    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 하기');
+    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 시작');
     expect(restartBtn).not.toBeUndefined();
 
     freshGetPhase('result').unmount();
   });
 
-  it('"다시 하기" reloads the page, since there is no server rematch API (normal: restart wiring)', () => {
+  it('"다시 시작" asks the server for a room restart (normal: restart wiring)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+    getPhase('result').mount(root, ctx);
+    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 시작')!;
+
+    restartBtn.click();
+
+    const emit = ctx.socket.emit as ReturnType<typeof vi.fn>;
+    expect(emit).toHaveBeenCalledWith('room:restart', expect.any(Function));
+
+    getPhase('result').unmount();
+  });
+
+  it('"나가기" reloads the page, which disconnects and leaves the room (normal: leave wiring)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
     handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
@@ -150,11 +168,31 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
       writable: true,
       configurable: true,
     });
-    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 하기')!;
+    const leaveBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '나가기')!;
 
-    restartBtn.click();
+    leaveBtn.click();
 
     expect(reloadSpy).toHaveBeenCalledTimes(1);
+
+    getPhase('result').unmount();
+  });
+
+  it('shows an error when the restart ack fails for a reason other than BAD_PHASE (error case)', async () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+    getPhase('result').mount(root, ctx);
+    const emit = ctx.socket.emit as ReturnType<typeof vi.fn>;
+    emit.mockImplementation((event: string, ack: (res: unknown) => void) => {
+      if (event === 'room:restart') ack({ ok: false, code: 'ROOM_NOT_FOUND' });
+    });
+    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 시작')!;
+
+    restartBtn.click();
+    await Promise.resolve(); // flush the ack promise's .then microtask
+    await Promise.resolve();
+    expect(root.textContent).toContain('다시 시작할 수 없어요');
 
     getPhase('result').unmount();
   });

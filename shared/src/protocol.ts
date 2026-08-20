@@ -56,7 +56,7 @@ export type Winner = 'hider' | 'seekers';
 
 // ---- Timer / room constants (D8, D13, D6) ----------------------------------
 
-export const HIDE_MS = 60_000;
+export const HIDE_MS = 180_000;
 export const SEEK_MS = 120_000;
 export const LOCKOUT_MS = 3_000;
 export const MAX_PLAYERS = 8;
@@ -198,8 +198,11 @@ export interface ServerToClientEvents {
     winner: Winner;
     foundBy?: string;
     stickman: StickmanState | null;
-    reason: 'found' | 'timeout' | 'forfeit';
+    reason: 'found' | 'timeout';
   }) => void;
+  // Mid-game abort: the room dropped below a playable state (hider left, or
+  // fewer than MIN_PLAYERS remain) — everyone returns to the lobby.
+  'game:aborted': (payload: { reason: 'hider_left' | 'not_enough_players' }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -211,4 +214,5 @@ export interface ClientToServerEvents {
   'hide:update': (req: HideUpdateReq) => void;
   'hide:confirm': (ack: (res: Result) => void) => void;
   'seek:click': (req: SeekClickReq, ack: (res: SeekClickAck) => void) => void;
+  'room:restart': (ack: (res: Result) => void) => void;
 }

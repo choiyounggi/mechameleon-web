@@ -23,6 +23,7 @@ export interface AppState {
   role: 'hider' | 'seeker' | null;
   room: RoomStatePublic | null;
   hidePayload: HidePayload | null;
+  abortNotice: string | null; // why the last game was aborted, shown in the lobby
 }
 
 export interface AppContext {
@@ -38,6 +39,7 @@ export function createAppContext(): AppContext {
       role: null,
       room: null,
       hidePayload: null,
+      abortNotice: null,
     },
   };
 }
@@ -86,6 +88,12 @@ export function startGame(ctx: AppContext): Promise<Result> {
 export function hideConfirm(ctx: AppContext): Promise<Result> {
   return new Promise((resolve) => {
     ctx.socket.emit('hide:confirm', resolve);
+  });
+}
+
+export function restartGame(ctx: AppContext): Promise<Result> {
+  return new Promise((resolve) => {
+    ctx.socket.emit('room:restart', resolve);
   });
 }
 

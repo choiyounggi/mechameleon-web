@@ -127,7 +127,7 @@ describe('RoomEngine — error cases', () => {
 });
 
 describe('RoomEngine — boundary cases', () => {
-  it('auto-transitions hide -> seek exactly at the 60s hide timer expiry', () => {
+  it('auto-transitions hide -> seek exactly at the hide timer expiry', () => {
     const { engine, events } = createEngine();
     const { hostId } = setupTwoPlayerRoom(engine);
     engine.start(hostId);
@@ -137,7 +137,7 @@ describe('RoomEngine — boundary cases', () => {
     expect(events.some((e) => e.event === 'phase:seek')).toBe(true);
   });
 
-  it('declares the hider the winner when the 120s seek timer expires', () => {
+  it('declares the hider the winner when the seek timer expires', () => {
     const { engine, events } = createEngine();
     const { hostId } = setupTwoPlayerRoom(engine);
     engine.start(hostId);
@@ -183,18 +183,21 @@ describe('RoomEngine — boundary cases', () => {
     expect(engine.click(seekerId, 730, 945)).toBe('hit');
   });
 
-  it('ends the game as a seekers-forfeit when the hider leaves mid-game', () => {
+  it('aborts back to the lobby (not result) when the hider leaves mid-game', () => {
     const { engine, events } = createEngine();
     const { hostId } = setupTwoPlayerRoom(engine);
     engine.start(hostId);
     const hiderId = hiderIdFrom(events);
 
     engine.leave(hiderId);
-    const endEvent = events.find((e) => e.event === 'game:end');
-    expect(endEvent?.payload).toMatchObject({ winner: 'seekers', reason: 'forfeit' });
+    const abortEvent = events.find((e) => e.event === 'game:aborted');
+    expect(abortEvent?.payload).toEqual({ reason: 'hider_left' });
+    expect(events.some((e) => e.event === 'game:end')).toBe(false);
+    const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null });
   });
 
-  it('ends the game as a hider win when the last seeker leaves', () => {
+  it('aborts back to the lobby when the last seeker leaves and only the hider remains', () => {
     const { engine, events } = createEngine();
     const { hostId, joinerId } = setupTwoPlayerRoom(engine);
     engine.start(hostId);
@@ -202,8 +205,29 @@ describe('RoomEngine — boundary cases', () => {
     const seekerId = hiderId === hostId ? joinerId : hostId;
 
     engine.leave(seekerId);
-    const endEvent = events.find((e) => e.event === 'game:end');
-    expect(endEvent?.payload).toMatchObject({ winner: 'hider', reason: 'forfeit' });
+    const abortEvent = events.find((e) => e.event === 'game:aborted');
+    expect(abortEvent?.payload).toEqual({ reason: 'not_enough_players' });
+    expect(events.some((e) => e.event === 'game:end')).toBe(false);
+    const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(lastState.payload).toMatchObject({ phase: 'lobby' });
+  });
+
+  it('keeps the game running and reassigns host when a non-hider host leaves a 3-player game', () => {
+    // rng 0.7 makes the hider pick floor(0.7 * 3) = 2 — the third player —
+    // keeping the host a plain seeker.
+    const { engine, events } = createEngine(() => 0.7);
+    const { code, hostId } = setupTwoPlayerRoom(engine);
+    engine.join(code, 'third');
+    engine.start(hostId);
+    const hiderId = hiderIdFrom(events);
+    expect(hiderId).not.toBe(hostId);
+
+    engine.leave(hostId);
+    expect(events.some((e) => e.event === 'game:aborted')).toBe(false);
+    const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    const payload = lastState.payload as { phase: string; players: Array<{ isHost: boolean }> };
+    expect(payload.phase).toBe('hide');
+    expect(payload.players.filter((p) => p.isHost)).toHaveLength(1);
   });
 
   it('throws after 5 room-code collision retries', () => {
@@ -340,5 +364,77 @@ describe('RoomEngine — private rooms & room list', () => {
     const stateEvent = events.filter((e) => e.event === 'room:state').at(-1)!;
     expect(stateEvent.payload).toMatchObject({ name: '이름표시', isPrivate: true });
     expect(JSON.stringify(stateEvent.payload)).not.toContain('pw');
+  });
+});
+
+describe('RoomEngine — in-game rooms reject new joins', () => {
+  it('rejects joining during the hide phase (BAD_PHASE)', () => {
+    const { engine } = createEngine();
+    const { code, hostId } = setupTwoPlayerRoom(engine);
+    engine.start(hostId);
+    expect(engine.join(code, 'latecomer')).toEqual({ ok: false, code: 'BAD_PHASE' });
+  });
+
+  it('rejects joining during the seek phase (BAD_PHASE)', () => {
+    const { engine, events } = createEngine();
+    const { code, hostId } = setupTwoPlayerRoom(engine);
+    engine.start(hostId);
+    engine.hideConfirm(hiderIdFrom(events));
+    expect(engine.join(code, 'latecomer')).toEqual({ ok: false, code: 'BAD_PHASE' });
+  });
+});
+
+describe('RoomEngine — restart from the result screen', () => {
+  /** Plays a full round to the result phase (seeker clicks the default stickman). */
+  function playToResult(engine: RoomEngine, events: RecordedEvent[]) {
+    const ids = setupTwoPlayerRoom(engine);
+    engine.start(ids.hostId);
+    const hiderId = hiderIdFrom(events);
+    const seekerId = hiderId === ids.hostId ? ids.joinerId : ids.hostId;
+    engine.hideConfirm(hiderId);
+    expect(engine.click(seekerId, 720, 930)).toBe('hit');
+    return ids;
+  }
+
+  it('returns the room to the lobby and allows starting a new round (normal case)', () => {
+    const { engine, events } = createEngine();
+    const { hostId, joinerId } = playToResult(engine, events);
+
+    expect(engine.restart(joinerId)).toEqual({ ok: true });
+    const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null });
+
+    // the background is kept, so the host can start round 2 immediately
+    expect(engine.start(hostId)).toEqual({ ok: true });
+  });
+
+  it('rejects a restart outside the result phase (BAD_PHASE)', () => {
+    const { engine } = createEngine();
+    const { hostId } = setupTwoPlayerRoom(engine); // still in lobby
+    expect(engine.restart(hostId)).toEqual({ ok: false, code: 'BAD_PHASE' });
+  });
+
+  it('rejects a restart from a player who is in no room (ROOM_NOT_FOUND boundary)', () => {
+    const { engine } = createEngine();
+    expect(engine.restart('ghost-id')).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
+  });
+
+  it('clears an active seek lockout across a restart so round 2 starts unlocked', () => {
+    // rng 0 always picks players[0] (the host) as hider, in both rounds.
+    const { engine, events } = createEngine(() => 0);
+    const { code, hostId, joinerId } = setupTwoPlayerRoom(engine);
+    const join2 = engine.join(code, 'third');
+    if (!join2.ok) throw new Error('join failed');
+    engine.start(hostId);
+    expect(hiderIdFrom(events)).toBe(hostId);
+    engine.hideConfirm(hostId);
+    expect(engine.click(joinerId, 0, 0)).toBe('miss'); // joiner locked for 3s
+    expect(engine.click(join2.playerId, 720, 930)).toBe('hit'); // round ends
+
+    expect(engine.restart(hostId)).toEqual({ ok: true });
+    engine.start(hostId);
+    engine.hideConfirm(hostId);
+    // fake time never advanced, so without lockouts.clear() this would be 'locked'
+    expect(engine.click(joinerId, 0, 0)).toBe('miss');
   });
 });

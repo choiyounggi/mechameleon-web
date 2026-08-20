@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ARROW_STEP,
   SCALE_STEP,
+  SHIFT_ARROW_STEP,
   applyMove,
   clampPosition,
   clampScale,
@@ -18,14 +19,14 @@ import { formatRemaining, remainingMs } from '../src/hide/timer';
 const BOUNDS = { width: 1440, height: 900 };
 
 describe('movement: arrow-key stepping (D8)', () => {
-  it('ArrowRight moves x by ARROW_STEP=4 away from any edge (normal)', () => {
+  it('ArrowRight moves x by ARROW_STEP=12 away from any edge (normal)', () => {
     const next = applyMove({ x: 100, y: 100 }, ARROW_STEP, 0, BOUNDS);
-    expect(next).toEqual({ x: 104, y: 100 });
+    expect(next).toEqual({ x: 112, y: 100 });
   });
 
-  it('Shift+ArrowRight moves x by SHIFT step 16', () => {
-    const next = applyMove({ x: 100, y: 100 }, 16, 0, BOUNDS);
-    expect(next.x).toBe(116);
+  it('Shift+ArrowRight moves x by SHIFT step 48', () => {
+    const next = applyMove({ x: 100, y: 100 }, SHIFT_ARROW_STEP, 0, BOUNDS);
+    expect(next.x).toBe(148);
   });
 
   it('ArrowRight at x=width clamps and does not exceed the background width (boundary)', () => {

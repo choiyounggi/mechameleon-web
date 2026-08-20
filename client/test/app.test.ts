@@ -27,13 +27,13 @@ function makeCtx(): { ctx: AppContext; fire: (event: string, payload: unknown) =
   const { socket, fire } = makeMockSocket();
   const ctx: AppContext = {
     socket: socket as unknown as AppContext['socket'],
-    state: { playerId: null, role: null, room: null, hidePayload: null },
+    state: { playerId: null, role: null, room: null, hidePayload: null, abortNotice: null },
   };
   return { ctx, fire };
 }
 
 function lobbyRoomState(): RoomStatePublic {
-  return { code: 'ABCDEF', phase: 'lobby', players: [], background: null, endsAt: null };
+  return { code: 'ABCDEF', name: '테스트방', isPrivate: false, phase: 'lobby', players: [], background: null, endsAt: null };
 }
 
 describe('bootstrap (regression: first visitor saw a blank screen)', () => {
@@ -76,6 +76,47 @@ describe('bootstrap (regression: first visitor saw a blank screen)', () => {
       fire('room:state', { ...lobbyRoomState(), phase: 'result' }),
     ).not.toThrow();
     expect(root.innerHTML).not.toBe('');
+  });
+});
+
+describe('game:aborted -> back to the waiting room with a notice', () => {
+  it('shows the abort notice in the room screen after a hider_left abort (normal case)', () => {
+    const { ctx, fire } = makeCtx();
+    const root = document.createElement('div');
+    bootstrap(root, ctx);
+    ctx.state.playerId = 'p1';
+    const players = [{ id: 'p1', nickname: '영기', isHost: true }];
+    fire('room:state', { ...lobbyRoomState(), phase: 'seek', players });
+
+    fire('game:aborted', { reason: 'hider_left' });
+    fire('room:state', { ...lobbyRoomState(), players });
+
+    expect(ctx.state.abortNotice).toBe('숨는 사람이 나가서 게임이 종료됐어요');
+    expect(root.textContent).toContain('숨는 사람이 나가서 게임이 종료됐어요');
+  });
+
+  it('clears the notice and the stale role once the next game starts (boundary case)', () => {
+    const { ctx, fire } = makeCtx();
+    const root = document.createElement('div');
+    bootstrap(root, ctx);
+    fire('game:role', { role: 'hider' });
+    fire('game:aborted', { reason: 'not_enough_players' });
+    fire('room:state', lobbyRoomState());
+    expect(ctx.state.role).toBeNull(); // lobby wipes the previous game's role
+    expect(ctx.state.abortNotice).toBe('인원이 부족해서 게임이 종료됐어요');
+
+    fire('room:state', { ...lobbyRoomState(), phase: 'hide' });
+    expect(ctx.state.abortNotice).toBeNull();
+  });
+
+  it('maps an unknown reason to the generic not-enough-players text (error/defensive case)', () => {
+    const { ctx, fire } = makeCtx();
+    const root = document.createElement('div');
+    bootstrap(root, ctx);
+
+    fire('game:aborted', { reason: 'something_else' });
+
+    expect(ctx.state.abortNotice).toBe('인원이 부족해서 게임이 종료됐어요');
   });
 });
 

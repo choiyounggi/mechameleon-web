@@ -1,7 +1,7 @@
 import { MAX_SCALE, MIN_SCALE } from 'shared/protocol';
 
-export const ARROW_STEP = 4;
-export const SHIFT_ARROW_STEP = 16;
+export const ARROW_STEP = 12;
+export const SHIFT_ARROW_STEP = 48;
 export const SCALE_STEP = 0.1;
 
 export interface Point {

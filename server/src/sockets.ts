@@ -161,6 +161,13 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       ack({ ok: true, result });
     });
 
+    socket.on('room:restart', (ack) => {
+      if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
+
+      const playerId = myPlayerId;
+      ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.restart(playerId)));
+    });
+
     socket.on('disconnect', () => {
       if (!myPlayerId) return;
       const playerId = myPlayerId;

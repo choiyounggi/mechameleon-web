@@ -108,11 +108,8 @@ describe('resolveResultText (D8): winner/reason -> displayed text', () => {
     expect(resolveResultText(end, makeRoom([]))).toBe('숨은 사람 승리');
   });
 
-  it('shows the forfeit text regardless of which side is recorded as winner (boundary: forfeit overrides)', () => {
-    const seekerForfeit: SeekEndPayload = { winner: 'seekers', stickman: null, reason: 'forfeit' };
-    const hiderForfeit: SeekEndPayload = { winner: 'hider', stickman: null, reason: 'forfeit' };
-    expect(resolveResultText(seekerForfeit, makeRoom([]))).toBe('상대가 나갔어요');
-    expect(resolveResultText(hiderForfeit, makeRoom([]))).toBe('상대가 나갔어요');
+  it('falls back to "게임 종료" when no game:end payload exists (boundary: null end)', () => {
+    expect(resolveResultText(null, makeRoom([]))).toBe('게임 종료');
   });
 });
 

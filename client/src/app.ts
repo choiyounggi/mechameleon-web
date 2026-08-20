@@ -16,7 +16,21 @@ export function bootstrap(root: HTMLElement, ctx: AppContext): void {
     if (state.phase !== 'hide') {
       ctx.state.hidePayload = null;
     }
+    if (state.phase === 'lobby') {
+      // Back in the waiting room (restart or abort): the previous game's role
+      // must not leak into the next round's hide-screen mount.
+      ctx.state.role = null;
+    } else {
+      ctx.state.abortNotice = null;
+    }
     router.onPhase(state.phase);
+  });
+
+  ctx.socket.on('game:aborted', ({ reason }) => {
+    ctx.state.abortNotice =
+      reason === 'hider_left'
+        ? '숨는 사람이 나가서 게임이 종료됐어요'
+        : '인원이 부족해서 게임이 종료됐어요';
   });
 
   ctx.socket.on('game:role', ({ role }) => {

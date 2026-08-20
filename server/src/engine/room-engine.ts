@@ -139,30 +139,39 @@ export class RoomEngine {
       return;
     }
 
-    if (room.phase === 'lobby') {
-      if (!room.players.some((p) => p.isHost)) {
-        room.players[0].isHost = true;
-      }
-      this.broadcastState(room);
-      return;
+    // A hostless room is stuck (setBackground/start are host-only) — reassign
+    // in every phase, not just lobby, so a post-game room stays operable.
+    if (!room.players.some((p) => p.isHost)) {
+      room.players[0].isHost = true;
     }
 
     if (room.phase === 'hide' || room.phase === 'seek') {
-      if (wasHider) {
-        this.enterResult(room, { winner: 'seekers', foundBy: undefined, reason: 'forfeit' });
-        return;
-      }
       const seekersLeft = room.players.some((p) => p.id !== room.hiderId);
-      if (!seekersLeft) {
-        this.enterResult(room, { winner: 'hider', foundBy: undefined, reason: 'forfeit' });
+      if (wasHider || !seekersLeft || room.players.length < MIN_PLAYERS) {
+        // The game is no longer playable — abort it and send everyone back to
+        // the lobby instead of showing a result screen.
+        this.emit('all', 'game:aborted', {
+          reason: wasHider ? 'hider_left' : 'not_enough_players',
+        });
+        this.resetToLobby(room);
         return;
       }
       this.broadcastState(room);
       return;
     }
 
-    // result phase: game already decided, nothing to reconcile beyond removal.
+    // lobby/result phase: nothing to reconcile beyond removal.
     this.broadcastState(room);
+  }
+
+  /** Result-screen "다시 시작": any player sends the room back to the lobby. */
+  restart(playerId: string): Result {
+    const room = this.findRoomByPlayer(playerId);
+    if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
+    if (room.phase !== 'result') return { ok: false, code: 'BAD_PHASE' };
+
+    this.resetToLobby(room);
+    return { ok: true };
   }
 
   setBackground(playerId: string, background: Background): Result {
@@ -345,9 +354,20 @@ export class RoomEngine {
     }
   }
 
+  /** Back to the waiting room: wipes per-game state, keeps players/background. */
+  private resetToLobby(room: Room): void {
+    this.clearTimers(room);
+    room.phase = 'lobby';
+    room.hiderId = null;
+    room.stickman = null;
+    room.endsAt = null;
+    room.lockouts.clear();
+    this.broadcastState(room);
+  }
+
   private enterResult(
     room: Room,
-    payload: { winner: Winner; foundBy: string | undefined; reason: 'found' | 'timeout' | 'forfeit' },
+    payload: { winner: Winner; foundBy: string | undefined; reason: 'found' | 'timeout' },
   ): void {
     this.clearTimers(room);
     room.phase = 'result';
