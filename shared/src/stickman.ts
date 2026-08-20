@@ -21,6 +21,20 @@ export const SEGMENTS: Segment[] = [
   { part: 'rightLeg', x1: 0, y1: -48, x2: 16, y2: 0, r: 6 },
 ];
 
+// Initial pose: top of the page, horizontally centered. Feet sit 150px down so
+// the whole 120px body (plus head margin) is visible without scrolling — the
+// hider starts where the page opens, not buried mid-scroll.
+export const INITIAL_FEET_Y = 150;
+
+export function initialStickman(width: number, height: number): StickmanState {
+  return {
+    x: Math.round(width / 2),
+    y: Math.min(INITIAL_FEET_Y, Math.round(height)),
+    scale: 1,
+    strokes: [],
+  };
+}
+
 // Judging margin added to every segment's radius (D7).
 const HIT_MARGIN = 4;
 

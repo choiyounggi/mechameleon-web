@@ -32,11 +32,14 @@ function makeMockSocket() {
   return { socket, handlers };
 }
 
-function makeCtx(room: RoomStatePublic): { ctx: AppContext; handlers: Map<string, (p: unknown) => void> } {
+function makeCtx(
+  room: RoomStatePublic,
+  playerId = 'p2', // p1 is the host in makeRoom; p2 a plain player
+): { ctx: AppContext; handlers: Map<string, (p: unknown) => void> } {
   const { socket, handlers } = makeMockSocket();
   const ctx = {
     socket: socket as unknown as AppContext['socket'],
-    state: { playerId: 'p2', role: 'seeker' as const, room, hidePayload: null, abortNotice: null },
+    state: { playerId, role: 'seeker' as const, room, hidePayload: null, abortNotice: null },
   };
   return { ctx, handlers };
 }
@@ -104,8 +107,8 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     getPhase('result').unmount();
   });
 
-  it('offers both a restart and a leave button on the result screen (normal)', () => {
-    const { ctx, handlers } = makeCtx(makeRoom());
+  it('offers the host both restart modes plus leave (normal: host view)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom(), 'p1'); // host
     initSeek(ctx);
     handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
     const root = document.createElement('div');
@@ -113,8 +116,42 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     getPhase('result').mount(root, ctx);
 
     const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toContain('다시 시작');
+    expect(labels).toContain('같은 맵으로 다시 시작');
+    expect(labels).toContain('새 배경으로 다시 시작');
     expect(labels).toContain('나가기');
+
+    getPhase('result').unmount();
+  });
+
+  it('offers a non-host only the leave button and a waiting message (normal: guest view)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom()); // p2, not host
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).toEqual(['나가기']);
+    expect(root.textContent).toContain('호스트가 다음 게임을 정하고 있어요');
+
+    getPhase('result').unmount();
+  });
+
+  it('re-renders the restart buttons when this player is promoted to host mid-result (boundary: host handover)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom()); // p2, not host yet
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+    getPhase('result').mount(root, ctx);
+    expect(Array.from(root.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['나가기']);
+
+    // old host left: server reassigns and broadcasts the new player list
+    ctx.state.room = makeRoom({ players: [{ id: 'p2', nickname: '찾은이', isHost: true }] });
+    handlers.get('room:state')!(ctx.state.room);
+
+    const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).toContain('같은 맵으로 다시 시작');
 
     getPhase('result').unmount();
   });
@@ -134,24 +171,26 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     freshGetPhase('result').mount(root, ctx);
 
     expect(root.textContent).toContain('게임 종료');
-    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 시작');
-    expect(restartBtn).not.toBeUndefined();
+    const leaveBtnFresh = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '나가기');
+    expect(leaveBtnFresh).not.toBeUndefined();
 
     freshGetPhase('result').unmount();
   });
 
-  it('"다시 시작" asks the server for a room restart (normal: restart wiring)', () => {
-    const { ctx, handlers } = makeCtx(makeRoom());
+  it('the host restart buttons send the chosen mode to the server (normal: restart wiring)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom(), 'p1'); // host
     initSeek(ctx);
     handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
-    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 시작')!;
-
-    restartBtn.click();
-
+    const buttons = Array.from(root.querySelectorAll('button'));
     const emit = ctx.socket.emit as ReturnType<typeof vi.fn>;
-    expect(emit).toHaveBeenCalledWith('room:restart', expect.any(Function));
+
+    buttons.find((b) => b.textContent === '같은 맵으로 다시 시작')!.click();
+    expect(emit).toHaveBeenCalledWith('room:restart', { mode: 'same' }, expect.any(Function));
+
+    buttons.find((b) => b.textContent === '새 배경으로 다시 시작')!.click();
+    expect(emit).toHaveBeenCalledWith('room:restart', { mode: 'new' }, expect.any(Function));
 
     getPhase('result').unmount();
   });
@@ -178,16 +217,16 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   });
 
   it('shows an error when the restart ack fails for a reason other than BAD_PHASE (error case)', async () => {
-    const { ctx, handlers } = makeCtx(makeRoom());
+    const { ctx, handlers } = makeCtx(makeRoom(), 'p1'); // host
     initSeek(ctx);
     handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
     const emit = ctx.socket.emit as ReturnType<typeof vi.fn>;
-    emit.mockImplementation((event: string, ack: (res: unknown) => void) => {
-      if (event === 'room:restart') ack({ ok: false, code: 'ROOM_NOT_FOUND' });
+    emit.mockImplementation((event: string, _req: unknown, ack: (res: unknown) => void) => {
+      if (event === 'room:restart') ack({ ok: false, code: 'NOT_HOST' });
     });
-    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '다시 시작')!;
+    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '같은 맵으로 다시 시작')!;
 
     restartBtn.click();
     await Promise.resolve(); // flush the ack promise's .then microtask

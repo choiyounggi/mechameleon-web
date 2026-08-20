@@ -72,9 +72,9 @@ describe('RoomEngine — normal flow', () => {
 
     expect(engine.hideConfirm(hiderId)).toEqual({ ok: true });
 
-    // default stickman's feet are centered on the background at (720, 1000),
-    // scale 1; the torso center is 70px above that (see shared/test/stickman.test.ts).
-    const result = engine.click(seekerId, 720, 930);
+    // default stickman starts top-center: feet at (720, 150), scale 1; the
+    // torso center is 70px above that (see shared/test/stickman.test.ts).
+    const result = engine.click(seekerId, 720, 80);
     expect(result).toBe('hit');
 
     const endEvent = events.find((e) => e.event === 'game:end');
@@ -178,9 +178,9 @@ describe('RoomEngine — boundary cases', () => {
     const seekerId = hiderId === hostId ? joinerId : hostId;
     engine.hideConfirm(hiderId);
 
-    // default stickman centered at (720, 1000); torso boundary point per the
-    // same geometry verified in shared/test/stickman.test.ts.
-    expect(engine.click(seekerId, 730, 945)).toBe('hit');
+    // default stickman top-centered with feet at (720, 150); torso boundary
+    // point per the same geometry verified in shared/test/stickman.test.ts.
+    expect(engine.click(seekerId, 730, 80)).toBe('hit');
   });
 
   it('aborts back to the lobby (not result) when the hider leaves mid-game', () => {
@@ -248,7 +248,7 @@ describe('RoomEngine — hideUpdate authorization (server is the sole judge)', (
     engine.hideUpdate(hiderId, { x: 200, y: 300, scale: 1, colors: solidColors('#ff0000') });
     engine.hideConfirm(hiderId);
 
-    // the default center (720, 930) no longer hits...
+    // a spot far from the new position does not hit...
     expect(engine.click(seekerId, 720, 930)).toBe('miss');
     vi.advanceTimersByTime(LOCKOUT_MS);
     // ...but the hider's new torso center (200, 300-70) does.
@@ -267,8 +267,8 @@ describe('RoomEngine — hideUpdate authorization (server is the sole judge)', (
     engine.hideUpdate(seekerId, { x: 5, y: 5, scale: 1, colors: solidColors('#00ff00') });
     engine.hideConfirm(hiderId);
 
-    // the default center still hits: the spoofed update never took effect.
-    expect(engine.click(seekerId, 720, 930)).toBe('hit');
+    // the default torso still hits: the spoofed update never took effect.
+    expect(engine.click(seekerId, 720, 80)).toBe('hit');
   });
 });
 
@@ -392,7 +392,7 @@ describe('RoomEngine — restart from the result screen', () => {
     const hiderId = hiderIdFrom(events);
     const seekerId = hiderId === ids.hostId ? ids.joinerId : ids.hostId;
     engine.hideConfirm(hiderId);
-    expect(engine.click(seekerId, 720, 930)).toBe('hit');
+    expect(engine.click(seekerId, 720, 80)).toBe('hit');
     return ids;
   }
 
@@ -400,23 +400,39 @@ describe('RoomEngine — restart from the result screen', () => {
     const { engine, events } = createEngine();
     const { hostId, joinerId } = playToResult(engine, events);
 
-    expect(engine.restart(joinerId)).toEqual({ ok: true });
+    expect(engine.restart(hostId, 'same')).toEqual({ ok: true });
     const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
     expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null });
 
-    // the background is kept, so the host can start round 2 immediately
+    // 'same' keeps the background, so the host can start round 2 immediately
     expect(engine.start(hostId)).toEqual({ ok: true });
+  });
+
+  it("clears the background in 'new' mode so the host must capture a fresh URL", () => {
+    const { engine, events } = createEngine();
+    const { hostId } = playToResult(engine, events);
+
+    expect(engine.restart(hostId, 'new')).toEqual({ ok: true });
+    const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(lastState.payload).toMatchObject({ phase: 'lobby', background: null });
+    expect(engine.start(hostId)).toEqual({ ok: false, code: 'NEED_BACKGROUND' });
+  });
+
+  it('rejects a restart from a non-host player (NOT_HOST error case)', () => {
+    const { engine, events } = createEngine();
+    const { joinerId } = playToResult(engine, events);
+    expect(engine.restart(joinerId, 'same')).toEqual({ ok: false, code: 'NOT_HOST' });
   });
 
   it('rejects a restart outside the result phase (BAD_PHASE)', () => {
     const { engine } = createEngine();
     const { hostId } = setupTwoPlayerRoom(engine); // still in lobby
-    expect(engine.restart(hostId)).toEqual({ ok: false, code: 'BAD_PHASE' });
+    expect(engine.restart(hostId, 'same')).toEqual({ ok: false, code: 'BAD_PHASE' });
   });
 
   it('rejects a restart from a player who is in no room (ROOM_NOT_FOUND boundary)', () => {
     const { engine } = createEngine();
-    expect(engine.restart('ghost-id')).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
+    expect(engine.restart('ghost-id', 'same')).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
   });
 
   it('clears an active seek lockout across a restart so round 2 starts unlocked', () => {
@@ -429,9 +445,9 @@ describe('RoomEngine — restart from the result screen', () => {
     expect(hiderIdFrom(events)).toBe(hostId);
     engine.hideConfirm(hostId);
     expect(engine.click(joinerId, 0, 0)).toBe('miss'); // joiner locked for 3s
-    expect(engine.click(join2.playerId, 720, 930)).toBe('hit'); // round ends
+    expect(engine.click(join2.playerId, 720, 80)).toBe('hit'); // round ends
 
-    expect(engine.restart(hostId)).toEqual({ ok: true });
+    expect(engine.restart(hostId, 'same')).toEqual({ ok: true });
     engine.start(hostId);
     engine.hideConfirm(hostId);
     // fake time never advanced, so without lockouts.clear() this would be 'locked'

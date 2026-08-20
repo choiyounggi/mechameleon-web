@@ -3,6 +3,7 @@ import type { AppContext } from '../net';
 import { createHideUpdateSender, hideConfirm } from '../net';
 import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
+import { initialStickman } from 'shared/stickman';
 import { drawStickman } from '../render/stickman-renderer';
 import { pickColor } from './eyedropper';
 import { ARROW_STEP, SCALE_STEP, SHIFT_ARROW_STEP, applyMove, clampScale } from './movement';
@@ -56,12 +57,9 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   }
   const { background, endsAt } = payload;
 
-  let stickman: StickmanState = {
-    x: background.width / 2,
-    y: background.height / 2,
-    scale: 1,
-    strokes: [],
-  };
+  // Same top-center start pose the server assigns (shared/stickman.ts) — the
+  // page opens scrolled to the top with the stickman in view.
+  let stickman: StickmanState = initialStickman(background.width, background.height);
   let currentColor = DEFAULT_BRUSH_COLOR;
   let activeStroke: StickmanStroke | null = null;
 

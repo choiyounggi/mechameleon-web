@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hitTest } from '../src/stickman';
+import { INITIAL_FEET_Y, hitTest, initialStickman } from '../src/stickman';
 import { zNickname, zStickmanState } from '../src/protocol';
 
 const baseColors = {
@@ -101,5 +101,20 @@ describe('zStickmanState strokes (brush model)', () => {
     }));
     const total = zStickmanState.safeParse({ ...base, strokes });
     expect(total.success).toBe(false); // 8 * 501 > MAX_TOTAL_POINTS = 4000
+  });
+});
+
+describe('initialStickman — top-center start pose', () => {
+  it('starts horizontally centered with feet 150px from the top (normal)', () => {
+    const s = initialStickman(1440, 2000);
+    expect(s).toEqual({ x: 720, y: INITIAL_FEET_Y, scale: 1, strokes: [] });
+  });
+
+  it('rounds an odd width to the nearest center pixel (boundary: rounding)', () => {
+    expect(initialStickman(1441, 2000).x).toBe(721);
+  });
+
+  it('clamps the feet to the background height when the page is shorter than the start offset (error/degenerate background)', () => {
+    expect(initialStickman(1440, 100).y).toBe(100);
   });
 });

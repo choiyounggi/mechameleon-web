@@ -69,18 +69,20 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   const buttons = document.createElement('div');
   const errorEl = document.createElement('div');
 
-  const restartBtn = document.createElement('button');
-  restartBtn.type = 'button';
-  restartBtn.textContent = '다시 시작';
-  restartBtn.addEventListener('click', () => {
-    void restartGame(ctx).then((res) => {
-      // BAD_PHASE: someone else already restarted — the room:state broadcast
-      // moves this client to the lobby anyway, so only report other failures.
-      if (!res.ok && res.code !== 'BAD_PHASE') {
-        errorEl.textContent = '다시 시작할 수 없어요';
-      }
-    });
-  });
+  // Host decides the next round: same map for an instant rematch, or a fresh
+  // URL (background cleared, so the lobby demands a new capture). Everyone
+  // else waits for that choice or leaves.
+  const amHost = ctx.state.room?.players.find((p) => p.id === ctx.state.playerId)?.isHost ?? false;
+  if (amHost) {
+    buttons.append(
+      makeRestartButton(ctx, errorEl, '같은 맵으로 다시 시작', 'same'),
+      makeRestartButton(ctx, errorEl, '새 배경으로 다시 시작', 'new'),
+    );
+  } else {
+    const waiting = document.createElement('p');
+    waiting.textContent = '호스트가 다음 게임을 정하고 있어요…';
+    root.appendChild(waiting);
+  }
 
   const leaveBtn = document.createElement('button');
   leaveBtn.type = 'button';
@@ -91,19 +93,58 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
     window.location.reload();
   });
 
-  buttons.append(restartBtn, leaveBtn);
+  buttons.appendChild(leaveBtn);
   root.append(buttons, errorEl);
+}
+
+function makeRestartButton(
+  ctx: AppContext,
+  errorEl: HTMLElement,
+  label: string,
+  mode: 'same' | 'new',
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    void restartGame(ctx, mode).then((res) => {
+      // BAD_PHASE: the room already left the result phase — the room:state
+      // broadcast moves this client to the lobby anyway; report the rest.
+      if (!res.ok && res.code !== 'BAD_PHASE') {
+        errorEl.textContent = '다시 시작할 수 없어요';
+      }
+    });
+  });
+  return btn;
 }
 
 function createResultController(): PhaseController {
   const cleanupHolder: CleanupHolder = { cleanup: null };
+  let unbind: (() => void) | null = null;
 
   return {
     mount(root: HTMLElement, ctx: AppContext) {
-      root.innerHTML = '';
-      mountResultScreen(root, ctx, cleanupHolder);
+      function render(): void {
+        cleanupHolder.cleanup?.();
+        cleanupHolder.cleanup = null;
+        root.innerHTML = '';
+        mountResultScreen(root, ctx, cleanupHolder);
+      }
+      render();
+
+      // The host can change while this screen is up (old host left, someone
+      // was promoted) — re-render so the new host gets the restart buttons.
+      // Guarded on phase because socket.io still calls a just-removed
+      // listener once after a same-event unmount (see lobby's mounted guard).
+      function onRoomState(): void {
+        if (ctx.state.room?.phase === 'result') render();
+      }
+      ctx.socket.on('room:state', onRoomState);
+      unbind = () => ctx.socket.off('room:state', onRoomState);
     },
     unmount() {
+      unbind?.();
+      unbind = null;
       cleanupHolder.cleanup?.();
       cleanupHolder.cleanup = null;
     },

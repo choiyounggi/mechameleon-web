@@ -18,7 +18,7 @@ import {
   type StickmanState,
   type Winner,
 } from 'shared/protocol';
-import { hitTest } from 'shared/stickman';
+import { hitTest, initialStickman } from 'shared/stickman';
 
 export interface Scheduler {
   setTimeout(fn: () => void, ms: number): unknown;
@@ -164,12 +164,18 @@ export class RoomEngine {
     this.broadcastState(room);
   }
 
-  /** Result-screen "다시 시작": any player sends the room back to the lobby. */
-  restart(playerId: string): Result {
+  /**
+   * Result-screen restart, host only: 'same' keeps the background for an
+   * instant rematch, 'new' clears it so the lobby steers the host to capture
+   * a fresh URL before the next round.
+   */
+  restart(playerId: string, mode: 'same' | 'new'): Result {
     const room = this.findRoomByPlayer(playerId);
     if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
+    if (!this.isHost(room, playerId)) return { ok: false, code: 'NOT_HOST' };
     if (room.phase !== 'result') return { ok: false, code: 'BAD_PHASE' };
 
+    if (mode === 'new') room.background = null;
     this.resetToLobby(room);
     return { ok: true };
   }
@@ -288,12 +294,9 @@ export class RoomEngine {
   }
 
   private defaultStickman(background: Background): StickmanState {
-    return {
-      x: Math.round(background.width / 2),
-      y: Math.round(background.height / 2),
-      scale: 1,
-      strokes: [], // unpainted white body — the hider paints with the brush
-    };
+    // top-center of the page (see shared/stickman.ts initialStickman) with an
+    // unpainted white body — the hider paints with the brush
+    return initialStickman(background.width, background.height);
   }
 
   private clampStickman(stickman: StickmanState, background: Background): StickmanState {

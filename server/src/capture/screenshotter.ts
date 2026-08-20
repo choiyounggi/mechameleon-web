@@ -17,9 +17,10 @@ const PRIMARY_TIMEOUT_MS = 15000;
 const RETRY_TIMEOUT_MS = 10000;
 
 // page.evaluate() below runs inside the browser page, not this Node process,
-// so `document` is real at runtime -- this server package has no "dom" lib,
-// hence the minimal local ambient shape instead of widening tsconfig.
+// so `document`/`window` are real at runtime -- this server package has no
+// "dom" lib, hence the minimal local ambient shapes instead of widening tsconfig.
 declare const document: { documentElement: { scrollHeight: number } };
+declare const window: { innerHeight: number; scrollTo(x: number, y: number): void };
 
 // D2: single chromium instance for the process lifetime, lazily launched and
 // cached on the module scope so concurrent first-callers share one launch.
@@ -65,11 +66,33 @@ export const playwrightScreenshotter: Screenshotter = {
       const page = await context.newPage();
       await gotoWithRetry(page, url);
 
+      // Walk down the page once before capturing: lazy-loaded content below
+      // the first viewport never renders otherwise, which left everything
+      // under the fold blank in the screenshot. Capped a little above
+      // MAX_HEIGHT so infinite-scroll pages can't keep us walking forever.
+      await page.evaluate(async (maxY: number) => {
+        for (
+          let y = 0;
+          y < Math.min(document.documentElement.scrollHeight, maxY);
+          y += window.innerHeight
+        ) {
+          window.scrollTo(0, y);
+          await new Promise((resolve) => setTimeout(resolve, 80));
+        }
+        window.scrollTo(0, 0);
+      }, MAX_HEIGHT);
+
       // D4: width is fixed; height is the page's real scroll height, floored
       // at the viewport height and capped so a pathological page can't
       // produce an unbounded screenshot.
       const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
       const height = clampCaptureHeight(scrollHeight);
+
+      // The viewport must cover the whole capture area: Chromium leaves
+      // off-viewport regions unpainted, so clipping beyond the default 900px
+      // viewport produced blank pixels below the fold.
+      await page.setViewportSize({ width: VIEWPORT_WIDTH, height });
+      await page.waitForTimeout(300); // let the resized page settle/repaint
 
       const png = await page.screenshot({
         clip: { x: 0, y: 0, width: VIEWPORT_WIDTH, height },
