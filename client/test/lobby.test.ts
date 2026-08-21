@@ -338,6 +338,90 @@ describe('lobby leave button (D1/D5): room screen, no confirm step', () => {
   });
 });
 
+describe('lobby leave-and-return: nickname persists across the in-app leave flow (r1 F1)', () => {
+  beforeEach(() => {
+    // jsdom in this vitest setup may not provide localStorage; the lobby code
+    // treats it as best-effort, so the tests do too.
+    try {
+      window.localStorage?.clear();
+    } catch {
+      /* noop */
+    }
+  });
+
+  it('keeps the nickname prefilled on the home screen after create -> leaveToHome-style reset -> remount (normal)', async () => {
+    const roomStateHandlers: Array<(payload: unknown) => void> = [];
+    const ctx: AppContext = {
+      socket: {
+        emit: vi.fn((event: string, ...args: unknown[]) => {
+          const ack = args.at(-1) as ((res: unknown) => void) | undefined;
+          if (event === 'room:create' && ack) ack({ ok: true, playerId: 'p1' });
+          if (event === 'rooms:list' && ack) ack({ ok: true, rooms: [] });
+        }),
+        on: vi.fn((event: string, handler: (payload: unknown) => void) => {
+          if (event === 'room:state') roomStateHandlers.push(handler);
+        }),
+        off: vi.fn(),
+      } as unknown as AppContext['socket'],
+      state: { playerId: null, role: null, room: null, hidePayload: null, abortNotice: null },
+    };
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+    await new Promise((r) => setTimeout(r, 0));
+    root.querySelector<HTMLInputElement>('input[aria-label="닉네임"]')!.value = '영기';
+    root.querySelector<HTMLInputElement>('input[aria-label="방 이름"]')!.value = '테스트방';
+    Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '만들기')!.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ctx.state.playerId).toBe('p1');
+
+    // Simulate the server's room:state push that follows a successful create --
+    // this is what actually swaps the DOM to the room screen (dropping the
+    // nickname input entirely) in production, not just an in-place re-render.
+    ctx.state.room = {
+      code: 'ABCDEF',
+      name: '테스트방',
+      isPrivate: false,
+      phase: 'lobby',
+      players: [{ id: 'p1', nickname: '영기', isHost: true }],
+      background: null,
+      endsAt: null,
+    };
+    roomStateHandlers.forEach((h) => h(ctx.state.room));
+    expect(root.querySelector('input[aria-label="닉네임"]')).toBeNull(); // room screen is up now
+
+    // leaveToHome (app.ts) resets room/game state but must not touch nickname
+    controller.unmount();
+    ctx.state.playerId = null;
+    ctx.state.role = null;
+    ctx.state.room = null;
+    ctx.state.hidePayload = null;
+    ctx.state.abortNotice = null;
+    controller.mount(root, ctx);
+
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="닉네임"]')!.value).toBe('영기');
+
+    controller.unmount();
+  });
+
+  it('leaves the nickname input empty for a first-time visitor with no saved nickname (boundary)', () => {
+    const ctx: AppContext = {
+      socket: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } as unknown as AppContext['socket'],
+      state: { playerId: null, role: null, room: null, hidePayload: null, abortNotice: null },
+    };
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="닉네임"]')!.value).toBe('');
+
+    controller.unmount();
+  });
+});
+
 describe('start-condition hints (regression: full room + no background looked broken)', () => {
   it('tells the host the background is still missing when players are enough (normal)', () => {
     const ctx = makeHostCtx(makeRoom({ players: [

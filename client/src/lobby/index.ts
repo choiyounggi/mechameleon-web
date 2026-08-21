@@ -195,7 +195,7 @@ export function createLobbyController(): PhaseController {
         nickInput.placeholder = '이름';
         nickInput.maxLength = 12;
         nickInput.setAttribute('aria-label', '닉네임');
-        nickInput.value = savedNickname();
+        nickInput.value = ctx.state.nickname ?? savedNickname();
         nickInput.addEventListener('change', () => saveNickname(nickInput.value.trim()));
         nickRow.appendChild(nickInput);
         wrap.appendChild(nickRow);
@@ -395,6 +395,7 @@ export function createLobbyController(): PhaseController {
         creating = false;
         if (res.ok) {
           ctx.state.playerId = res.playerId;
+          ctx.state.nickname = nick;
         } else {
           createError = '방을 만들 수 없어요 — 입력을 확인해 주세요';
         }
@@ -412,6 +413,7 @@ export function createLobbyController(): PhaseController {
         const res = await joinRoom(ctx, code, nick, password);
         if (res.ok) {
           ctx.state.playerId = res.playerId;
+          ctx.state.nickname = nick;
           joinError = null;
         } else {
           joinError = joinErrorMessage(res.code);

@@ -1,3 +1,4 @@
+import type { ServerToClientEvents } from 'shared/protocol';
 import type { AppContext } from './net';
 import { leaveRoom } from './net';
 import { createPhaseRouter } from './phases';
@@ -5,7 +6,12 @@ import './lobby';
 import './hide';
 import { initSeek } from './seek';
 
-const ABORT_REASON_TEXT: Record<string, string> = {
+// Derived from the actual event payload (not duplicated) so a future reason
+// added to shared/protocol.ts fails this Record literal at compile time
+// instead of silently falling back at runtime (r1 N1).
+type AbortReason = Parameters<ServerToClientEvents['game:aborted']>[0]['reason'];
+
+const ABORT_REASON_TEXT: Record<AbortReason, string> = {
   hider_left: '숨는 사람이 나가서 게임이 종료됐어요',
   seeker_left: '찾는 사람이 나가서 게임이 종료됐어요',
   not_enough_players: '인원이 부족해서 게임이 종료됐어요',

@@ -25,6 +25,7 @@ export interface AppState {
   room: RoomStatePublic | null;
   hidePayload: HidePayload | null;
   abortNotice: string | null; // why the last game was aborted, shown in the lobby
+  nickname: string | null; // set on room:create/room:join; survives leaveToHome's reset (r1 F1)
 }
 
 export interface AppContext {
@@ -44,6 +45,7 @@ export function createAppContext(): AppContext {
       room: null,
       hidePayload: null,
       abortNotice: null,
+      nickname: null,
     },
   };
 }
