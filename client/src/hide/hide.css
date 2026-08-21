@@ -1,0 +1,23 @@
+/* Hallmark · screen: hide · migrated verbatim from style.css (t1-foundation T2, D7) — selectors and rules unchanged */
+
+.mc-hide-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-line);
+  font-size: 13px;
+}
+
+.mc-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--color-ink);
+  flex: 0 0 auto;
+}
+
+.mc-hide-hint {
+  color: var(--color-ink-soft);
+}
