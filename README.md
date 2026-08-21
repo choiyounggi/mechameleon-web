@@ -17,6 +17,7 @@ A web-based hide-and-seek game you can sneak in with coworkers during office hou
 - Everyone else **seeks** (120 s): scroll freely and click where a stickman is. A miss locks *you* out for 3 s and shows a subtle ripple **on everyone's screen**. A hit reveals just that hider and the round keeps going — the seekers win when **every hider is found**; if time runs out, the **surviving hiders win**.
 - The server is the only judge — clicks are validated server-side against the shared stickman geometry.
 - After the result screen, a **10-second countdown** ("대기실로 돌아갑니다") returns everyone to the room lobby automatically — with the **previous map and hider-count setting still in place**, so the host can start a rematch instantly or capture a fresh URL.
+- **Leaving is first-class**: every screen has a 나가기 button that returns you to the main lobby without a page reload — nickname kept, socket alive (mid-game it asks for a confirming second tap). A room stays alive down to its last player: if the host walks out, a remaining player is **auto-promoted to host**, and an empty room deletes itself. If a departure makes the round unplayable — fewer than 2 players, no hiders left, or no seekers left — the game **ends for everyone with a message saying why**, and the rest return to the room lobby.
 
 ## Quick start
 
@@ -33,10 +34,11 @@ Then share `http://<your-ip>:3000` with coworkers on the same network. Two playe
 
 ## Playing
 
-1. **Lobby** — enter a nickname, then create a room (public, or **private with a password**) or click one in the live room list.
+1. **Lobby** — enter a nickname, then create a room (public, or **private with a password**) or click one in the live room list. Rooms mid-game carry a **"게임 중" badge** and can't be joined until the round ends.
 2. The host fetches a background URL (or uploads an image), optionally adjusts the hider count ("숨는 사람 N명" stepper, default half the room), and presses start once 2+ players are in.
 3. Hide / seek / result — see the controls below. While the hider paints, seekers watch a themed hold screen (spinner + rotating hints) instead of a blank wait.
 4. After each round the whole room auto-returns to the lobby (10 s countdown) with the map preserved — restart right away or swap the map.
+5. Leave whenever you like — the room-lobby button exits immediately; during a round the button arms first ("한 번 더 누르면 나가요") so a stray click can't drop you out of a live game.
 
 ### Controls (hider)
 
