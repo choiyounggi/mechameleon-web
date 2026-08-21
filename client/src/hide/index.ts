@@ -1,4 +1,5 @@
 import type { StickmanState, StickmanStroke } from 'shared/protocol';
+import { distinctColorCount } from 'shared/stickman';
 import type { AppContext } from '../net';
 import { createHideUpdateSender, hideConfirm } from '../net';
 import type { PhaseController } from '../phases';
@@ -8,6 +9,7 @@ import { attachPressFX, paintBurst } from '../fx';
 import { attachLeaveConfirm } from '../util/leave-confirm';
 import { pickColor } from './eyedropper';
 import { ARROW_STEP, SCALE_STEP, SHIFT_ARROW_STEP, applyMove, clampScale } from './movement';
+import { colorNudge } from './nudge';
 import { DEFAULT_BRUSH_COLOR, EYEDROPPER_KEY, appendPoint, finishStroke, startStroke } from './paint';
 import { formatRemaining, remainingMs } from './timer';
 import { ZOOM_MIN, anchoredScroll, brushSizeForZoom, nextZoom, toImage } from './zoom';
@@ -202,9 +204,21 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   actionsRow.className = 'mc-hide-actions__row';
   actionsRow.append(swatch, confirmBtn, leaveBtn);
 
+  // D3: pre-confirm color-mixing nudge — separate element from errorEl, tone
+  // driven by data-level so confirming stays possible at any color count.
+  const nudgeEl = document.createElement('div');
+  nudgeEl.className = 'mc-hide-nudge';
+  function updateNudge(): void {
+    const count = distinctColorCount(stickman.strokes);
+    const nudge = colorNudge(count);
+    nudgeEl.dataset.level = nudge.level;
+    nudgeEl.textContent = `${count}색 · ${nudge.text}`;
+  }
+  updateNudge();
+
   const actions = document.createElement('div');
   actions.className = 'mc-hide-actions';
-  actions.append(actionsRow, errorEl);
+  actions.append(actionsRow, nudgeEl, errorEl);
 
   hud.append(timerWrap, keys, actions);
   root.appendChild(hud);
@@ -301,6 +315,7 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     } else {
       setError('물감 한도에 도달했어요');
     }
+    updateNudge();
     redraw();
   }
 
