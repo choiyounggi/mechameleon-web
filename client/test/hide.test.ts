@@ -266,7 +266,7 @@ describe('hide HUD: keycap control strip (D3, D8)', () => {
     const root = document.createElement('div');
     ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
     const caps = Array.from(root.querySelectorAll('.mc-keycap')).map((el) => el.textContent);
-    expect(caps).toEqual(['드래그', '⌥', '◀', '▶', '▲', '▼', '+/-']);
+    expect(caps).toEqual(['드래그', '⌥', '◀', '▶', '▲', '▼', '+/-', '⌃', '휠']);
     ctrl.unmount();
   });
 
@@ -415,6 +415,82 @@ function mountWaitCtxWithLeave(leaveToHome: () => Promise<void>) {
     leaveToHome,
   } as never;
 }
+
+describe('hide viewport zoom wiring (D1, D3, D5, D9)', () => {
+  it('ctrl+wheel scales the canvas CSS size, marks pixelated, and shows the zoom badge (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const canvases = root.querySelectorAll('canvas');
+    const bgCanvas = canvases[0] as HTMLCanvasElement;
+    const overlayCanvas = canvases[1] as HTMLCanvasElement;
+    const container = bgCanvas.parentElement as HTMLElement;
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }));
+
+    // background is 1440x900 (mountEditCtx); zoomed to 1.25x by one wheel tick.
+    expect(bgCanvas.style.width).toBe('1800px');
+    expect(bgCanvas.style.height).toBe('1125px');
+    expect(overlayCanvas.style.width).toBe('1800px');
+    expect(bgCanvas.style.imageRendering).toBe('pixelated');
+    const zoomBadge = root.querySelector('.mc-hide-key__zoom') as HTMLElement;
+    expect(zoomBadge.hidden).toBe(false);
+    expect(zoomBadge.textContent).toBe('x1.3');
+
+    ctrl.unmount();
+  });
+
+  it('a plain wheel (no ctrlKey) leaves the canvas untouched so native scroll still panning (boundary: ctrl gate)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const bgCanvas = root.querySelectorAll('canvas')[0] as HTMLCanvasElement;
+    const container = bgCanvas.parentElement as HTMLElement;
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: false }));
+
+    expect(bgCanvas.style.width).toBe('');
+    const zoomBadge = root.querySelector('.mc-hide-key__zoom') as HTMLElement;
+    expect(zoomBadge.hidden).toBe(true);
+
+    ctrl.unmount();
+  });
+
+  it('cannot zoom out below 1x, and the badge stays hidden at the floor (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const bgCanvas = root.querySelectorAll('canvas')[0] as HTMLCanvasElement;
+    const container = bgCanvas.parentElement as HTMLElement;
+
+    // scroll down (deltaY > 0) from the initial 1x floor
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, ctrlKey: true, clientX: 0, clientY: 0 }));
+
+    expect(bgCanvas.style.width).toBe('1440px'); // 1440 * clamped 1x, not below
+    expect(bgCanvas.style.imageRendering).toBe('');
+    const zoomBadge = root.querySelector('.mc-hide-key__zoom') as HTMLElement;
+    expect(zoomBadge.hidden).toBe(true);
+
+    ctrl.unmount();
+  });
+
+  it('cleans up the wheel listener on unmount so a later wheel event no longer zooms (error: leaked listener)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const bgCanvas = root.querySelectorAll('canvas')[0] as HTMLCanvasElement;
+    const container = bgCanvas.parentElement as HTMLElement;
+
+    ctrl.unmount();
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }));
+
+    expect(bgCanvas.style.width).toBe('');
+  });
+});
 
 describe('hide leave button (D4/D5): two-step confirm before leaving', () => {
   it('edit screen: first click arms the confirm label + red class, second click leaves (normal)', async () => {
