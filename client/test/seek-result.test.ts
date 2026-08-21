@@ -267,7 +267,7 @@ describe('result controller (D5/D6/D8): game:end -> rendered outcome', () => {
     freshGetPhase('result').unmount();
   });
 
-  it('"나가기" reloads the page, which disconnects and leaves the room (normal: leave wiring)', () => {
+  it('"나가기" transitions in-app via leaveToHome instead of reloading the page (normal: leave wiring)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
     handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
@@ -279,11 +279,13 @@ describe('result controller (D5/D6/D8): game:end -> rendered outcome', () => {
       writable: true,
       configurable: true,
     });
+    ctx.leaveToHome = vi.fn().mockResolvedValue(undefined);
     const leaveBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '나가기')!;
 
     leaveBtn.click();
 
-    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(reloadSpy).not.toHaveBeenCalled();
+    expect(ctx.leaveToHome).toHaveBeenCalledTimes(1);
 
     getPhase('result').unmount();
   });

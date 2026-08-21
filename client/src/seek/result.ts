@@ -136,10 +136,8 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   leaveBtn.type = 'button';
   leaveBtn.className = 'mc-btn mc-btn--ghost';
   leaveBtn.textContent = '나가기';
-  // Reloading drops the socket; the server's disconnect handler removes this
-  // player from the room, and the fresh page lands on the home screen.
   leaveBtn.addEventListener('click', () => {
-    window.location.reload();
+    void ctx.leaveToHome?.();
   });
   detachers.push(attachPressFX(leaveBtn));
 

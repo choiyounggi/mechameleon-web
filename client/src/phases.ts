@@ -36,20 +36,25 @@ export function getPhase(phase: Phase): PhaseController {
   return registry.get(phase) ?? fallbackController;
 }
 
-export function resolvePhaseChange(prev: Phase | null, next: Phase): 'switch' | 'none' {
+export function resolvePhaseChange(prev: Phase | null, next: Phase, force = false): 'switch' | 'none' {
+  if (force) return 'switch';
   return prev === next ? 'none' : 'switch';
 }
 
+export interface PhaseRouterOpts {
+  force?: boolean;
+}
+
 export interface PhaseRouter {
-  onPhase(next: Phase): void;
+  onPhase(next: Phase, opts?: PhaseRouterOpts): void;
 }
 
 export function createPhaseRouter(root: HTMLElement, ctx: AppContext): PhaseRouter {
   let currentPhase: Phase | null = null;
   let currentController: PhaseController | null = null;
 
-  function onPhase(next: Phase): void {
-    if (resolvePhaseChange(currentPhase, next) === 'none') return;
+  function onPhase(next: Phase, opts?: PhaseRouterOpts): void {
+    if (resolvePhaseChange(currentPhase, next, opts?.force) === 'none') return;
     currentController?.unmount();
     const ctrl = getPhase(next);
     ctrl.mount(root, ctx);

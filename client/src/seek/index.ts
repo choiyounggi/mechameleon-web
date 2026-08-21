@@ -5,7 +5,8 @@ import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { formatRemaining, remainingMs } from '../hide/timer';
-import { paintBurst, screenShake } from '../fx';
+import { attachPressFX, paintBurst, screenShake } from '../fx';
+import { attachLeaveConfirm } from '../util/leave-confirm';
 import { applySeekClickAck, canClick, lockoutBadgeText, seekBodyStyle } from './logic';
 import type { SeekEndPayload } from './logic';
 import { createRippleStore, drawRipples } from './ripple';
@@ -88,8 +89,13 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const remainingHidersEl = document.createElement('span');
   remainingHidersEl.className = 'mc-hud-label mc-seek-remaining';
   remainingHidersEl.textContent = `남은 카멜레온 ${stickmen.length}`;
-  hud.append(createHourglassIcon(), timerEl, hudLabel, remainingHidersEl);
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  hud.append(createHourglassIcon(), timerEl, hudLabel, remainingHidersEl, leaveBtn);
   root.appendChild(hud);
+
+  const detachLeavePressFX = attachPressFX(leaveBtn);
+  const detachLeaveConfirm = attachLeaveConfirm(leaveBtn, () => void ctx.leaveToHome?.());
 
   // D1: bottom-right oversized remaining-seconds readout (.mc-hud-num contract).
   const remainEl = document.createElement('div');
@@ -238,6 +244,8 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     ctx.socket.off('seek:found', onSeekFound);
     window.clearInterval(intervalId);
     if (rafHandle !== null) window.cancelAnimationFrame(rafHandle);
+    detachLeavePressFX();
+    detachLeaveConfirm();
   };
 }
 

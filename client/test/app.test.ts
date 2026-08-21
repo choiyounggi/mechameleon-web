@@ -23,13 +23,17 @@ function makeMockSocket() {
   return { socket, fire, emit };
 }
 
-function makeCtx(): { ctx: AppContext; fire: (event: string, payload: unknown) => void } {
-  const { socket, fire } = makeMockSocket();
+function makeCtx(): {
+  ctx: AppContext;
+  fire: (event: string, payload: unknown) => void;
+  emit: ReturnType<typeof vi.fn>;
+} {
+  const { socket, fire, emit } = makeMockSocket();
   const ctx: AppContext = {
     socket: socket as unknown as AppContext['socket'],
     state: { playerId: null, role: null, room: null, hidePayload: null, abortNotice: null },
   };
-  return { ctx, fire };
+  return { ctx, fire, emit };
 }
 
 function lobbyRoomState(): RoomStatePublic {
@@ -117,6 +121,51 @@ describe('game:aborted -> back to the waiting room with a notice', () => {
     fire('game:aborted', { reason: 'something_else' });
 
     expect(ctx.state.abortNotice).toBe('인원이 부족해서 게임이 종료됐어요');
+  });
+
+  it('maps a seeker_left abort to its own text (normal: seeker_left mapping)', () => {
+    const { ctx, fire } = makeCtx();
+    const root = document.createElement('div');
+    bootstrap(root, ctx);
+
+    fire('game:aborted', { reason: 'seeker_left' });
+
+    expect(ctx.state.abortNotice).toBe('찾는 사람이 나가서 게임이 종료됐어요');
+  });
+});
+
+describe('leaveToHome (D1/D2): app-internal leave, no page reload', () => {
+  it('emits room:leave, resets every state field, and force-remounts the lobby home screen (normal)', async () => {
+    const { ctx, fire, emit } = makeCtx();
+    const root = document.createElement('div');
+    bootstrap(root, ctx);
+    ctx.state.playerId = 'p1';
+    const players = [{ id: 'p1', nickname: '영기', isHost: true }];
+    fire('room:state', { ...lobbyRoomState(), players });
+    fire('game:role', { role: 'hider' });
+    fire('phase:hide', {
+      background: { imageUrl: '/x.png', width: 10, height: 10 },
+      endsAt: Date.now() + 1000,
+      stickman: { x: 0, y: 0, scale: 1, strokes: [] },
+    });
+    ctx.state.abortNotice = '숨는 사람이 나가서 게임이 종료됐어요';
+    expect(root.textContent).toContain('영기'); // room screen is up before leaving
+
+    const leavePromise = ctx.leaveToHome!();
+
+    expect(emit).toHaveBeenCalledWith('room:leave', expect.any(Function));
+    const ack = emit.mock.calls.find(([event]) => event === 'room:leave')![1] as (res: { ok: true }) => void;
+    ack({ ok: true });
+    await leavePromise;
+
+    expect(ctx.state.playerId).toBeNull();
+    expect(ctx.state.role).toBeNull();
+    expect(ctx.state.room).toBeNull();
+    expect(ctx.state.hidePayload).toBeNull();
+    expect(ctx.state.abortNotice).toBeNull();
+    // same phase ('lobby') both before and after leaving -- without the force
+    // remount this would silently no-op and leave the stale room screen up.
+    expect(root.textContent).toContain('방 만들기');
   });
 });
 

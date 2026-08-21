@@ -445,3 +445,33 @@ describe('seek controller: multi-hider rendering (D3, D4)', () => {
     expect(ctx.socket.off).toHaveBeenCalledWith('seek:found', onSeekFound);
   });
 });
+
+describe('seek controller: leave button (D4/D5/D7)', () => {
+  it('two-step confirm before leaving: first click arms the label, second click calls leaveToHome once (normal)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    ctx.leaveToHome = vi.fn().mockResolvedValue(undefined);
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+    const leaveBtn = Array.from(root.querySelectorAll('button')).find(
+      (b) => b.textContent === '나가기',
+    ) as HTMLButtonElement;
+    expect(leaveBtn).not.toBeUndefined();
+    expect(leaveBtn.className).toBe('mc-btn mc-btn--ghost');
+
+    leaveBtn.click();
+    expect(leaveBtn.textContent).toBe('한 번 더 누르면 나가요');
+    expect(leaveBtn.className).toBe('mc-btn mc-btn--red');
+    expect(ctx.leaveToHome).not.toHaveBeenCalled();
+
+    leaveBtn.click();
+    expect(ctx.leaveToHome).toHaveBeenCalledTimes(1);
+
+    getPhase('seek').unmount();
+  });
+});

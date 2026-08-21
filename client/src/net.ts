@@ -30,6 +30,9 @@ export interface AppState {
 export interface AppContext {
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   state: AppState;
+  // Wired by app.ts bootstrap: emits room:leave, resets state, and force-
+  // remounts the lobby home screen.
+  leaveToHome?: () => Promise<void>;
 }
 
 export function createAppContext(): AppContext {
@@ -65,6 +68,12 @@ export function joinRoom(
 ): Promise<RoomJoinAck> {
   return new Promise((resolve) => {
     ctx.socket.emit('room:join', { code, nickname, password }, resolve);
+  });
+}
+
+export function leaveRoom(ctx: AppContext): Promise<{ ok: true }> {
+  return new Promise((resolve) => {
+    ctx.socket.emit('room:leave', resolve);
   });
 }
 

@@ -5,6 +5,7 @@ import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { attachPressFX, paintBurst } from '../fx';
+import { attachLeaveConfirm } from '../util/leave-confirm';
 import { pickColor } from './eyedropper';
 import { ARROW_STEP, SCALE_STEP, SHIFT_ARROW_STEP, applyMove, clampScale } from './movement';
 import { DEFAULT_BRUSH_COLOR, EYEDROPPER_KEY, appendPoint, finishStroke, startStroke } from './paint';
@@ -78,8 +79,13 @@ function mountWaitScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   msg.textContent = WAIT_MESSAGES[0];
   const timerEl = document.createElement('div');
   timerEl.className = 'mc-hud-num';
-  wrap.append(spinner, msg, timerEl);
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  wrap.append(spinner, msg, timerEl, leaveBtn);
   root.appendChild(wrap);
+
+  const detachLeavePressFX = attachPressFX(leaveBtn);
+  const detachLeaveConfirm = attachLeaveConfirm(leaveBtn, () => void ctx.leaveToHome?.());
 
   const endsAt = ctx.state.room?.endsAt ?? null;
   function tick(): void {
@@ -103,6 +109,8 @@ function mountWaitScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   cleanupHolder.cleanup = () => {
     window.clearInterval(intervalId);
     window.clearInterval(msgIntervalId);
+    detachLeavePressFX();
+    detachLeaveConfirm();
   };
 }
 
@@ -175,9 +183,14 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     void hideConfirm(ctx);
   });
 
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  const detachLeavePressFX = attachPressFX(leaveBtn);
+  const detachLeaveConfirm = attachLeaveConfirm(leaveBtn, () => void ctx.leaveToHome?.());
+
   const actionsRow = document.createElement('div');
   actionsRow.className = 'mc-hide-actions__row';
-  actionsRow.append(swatch, confirmBtn);
+  actionsRow.append(swatch, confirmBtn, leaveBtn);
 
   const actions = document.createElement('div');
   actions.className = 'mc-hide-actions';
@@ -374,6 +387,8 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     bgCanvas.removeEventListener('mousemove', onPointerMove);
     window.clearInterval(intervalId);
     detachConfirmPressFX();
+    detachLeavePressFX();
+    detachLeaveConfirm();
     sender.cancel();
   };
 }

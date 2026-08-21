@@ -487,6 +487,16 @@ export function createLobbyController(): PhaseController {
         withPressFX(startBtn);
         wrap.appendChild(startBtn);
 
+        const leaveBtn = document.createElement('button');
+        leaveBtn.type = 'button';
+        leaveBtn.className = 'mc-btn mc-btn--ghost';
+        leaveBtn.textContent = '나가기';
+        leaveBtn.addEventListener('click', () => {
+          void ctx.leaveToHome?.();
+        });
+        withPressFX(leaveBtn);
+        wrap.appendChild(leaveBtn);
+
         // The start conditions were invisible — a full room with no background
         // looked like a broken button. Spell them out.
         if (!canStart) {

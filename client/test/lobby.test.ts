@@ -320,6 +320,24 @@ describe('lobby start button', () => {
   });
 });
 
+describe('lobby leave button (D1/D5): room screen, no confirm step', () => {
+  it('calls ctx.leaveToHome once on a single click, with no confirm step (normal)', () => {
+    const room = makeRoom({ background: { imageUrl: '/x.png', width: 10, height: 10 } });
+    const ctx = makeCtxAs('host-1', room);
+    ctx.leaveToHome = vi.fn().mockResolvedValue(undefined);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+    const leaveBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '나가기')!;
+    leaveBtn.click();
+
+    expect(ctx.leaveToHome).toHaveBeenCalledTimes(1);
+
+    controller.unmount();
+  });
+});
+
 describe('start-condition hints (regression: full room + no background looked broken)', () => {
   it('tells the host the background is still missing when players are enough (normal)', () => {
     const ctx = makeHostCtx(makeRoom({ players: [

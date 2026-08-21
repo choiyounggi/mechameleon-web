@@ -15,6 +15,12 @@
   pointer-events: none;
 }
 
+/* the HUD itself is click-through (so it never blocks the overlay canvas
+   underneath), but the leave button inside it must stay clickable */
+.mc-seek-hud .mc-btn {
+  pointer-events: auto;
+}
+
 .mc-seek-hud-timer {
   font-family: var(--font-numeral);
   font-weight: 700;

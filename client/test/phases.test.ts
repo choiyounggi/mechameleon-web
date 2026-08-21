@@ -27,6 +27,10 @@ describe('resolvePhaseChange', () => {
   it('does nothing when the phase repeats (boundary)', () => {
     expect(resolvePhaseChange('hide', 'hide')).toBe('none');
   });
+
+  it('switches on a repeated phase when force is true (boundary: leave-to-home force remount)', () => {
+    expect(resolvePhaseChange('lobby', 'lobby', true)).toBe('switch');
+  });
 });
 
 describe('getPhase', () => {
@@ -74,5 +78,29 @@ describe('createPhaseRouter', () => {
 
     expect(first.calls).toEqual(['mount', 'unmount']);
     expect(second.calls).toEqual(['mount']);
+  });
+
+  it('remounts the same phase when onPhase is called with force (normal: leave-to-home)', () => {
+    const ctrl = makeSpyController();
+    registerPhase('lobby', ctrl);
+    const root = document.createElement('div');
+    const router = createPhaseRouter(root, fakeCtx);
+
+    router.onPhase('lobby');
+    router.onPhase('lobby', { force: true });
+
+    expect(ctrl.calls).toEqual(['mount', 'unmount', 'mount']);
+  });
+
+  it('does not remount the same phase when force is omitted (boundary: default unchanged)', () => {
+    const ctrl = makeSpyController();
+    registerPhase('lobby', ctrl);
+    const root = document.createElement('div');
+    const router = createPhaseRouter(root, fakeCtx);
+
+    router.onPhase('lobby');
+    router.onPhase('lobby');
+
+    expect(ctrl.calls).toEqual(['mount']);
   });
 });

@@ -390,3 +390,120 @@ describe('hide wait screen: themed seeker hold (D6, D8)', () => {
     });
   });
 });
+
+function mountEditCtxWithLeave(endsAt: number, leaveToHome: () => Promise<void>) {
+  return {
+    socket: { emit: () => {}, on: () => {}, off: () => {} },
+    state: {
+      playerId: 'p1',
+      role: 'hider',
+      room: null,
+      hidePayload: {
+        background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
+        endsAt,
+        stickman: { x: 720, y: 100, scale: 1, strokes: [] },
+      },
+    },
+    leaveToHome,
+  } as never;
+}
+
+function mountWaitCtxWithLeave(leaveToHome: () => Promise<void>) {
+  return {
+    socket: { emit: () => {}, on: () => {}, off: () => {} },
+    state: { playerId: 'p1', role: 'seeker', room: { endsAt: Date.now() + 60_000 }, hidePayload: null },
+    leaveToHome,
+  } as never;
+}
+
+describe('hide leave button (D4/D5): two-step confirm before leaving', () => {
+  it('edit screen: first click arms the confirm label + red class, second click leaves (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const leaveToHome = vi.fn().mockResolvedValue(undefined);
+    ctrl.mount(root, mountEditCtxWithLeave(Date.now() + 60_000, leaveToHome));
+    const leaveBtn = Array.from(root.querySelectorAll('button')).find(
+      (b) => b.textContent === '나가기',
+    ) as HTMLButtonElement;
+    expect(leaveBtn).not.toBeUndefined();
+    expect(leaveBtn.className).toBe('mc-btn mc-btn--ghost');
+
+    leaveBtn.click();
+    expect(leaveBtn.textContent).toBe('한 번 더 누르면 나가요');
+    expect(leaveBtn.className).toBe('mc-btn mc-btn--red');
+    expect(leaveToHome).not.toHaveBeenCalled();
+
+    leaveBtn.click();
+    expect(leaveToHome).toHaveBeenCalledTimes(1);
+
+    ctrl.unmount();
+  });
+
+  it('wait screen: the same two-step confirm leaves after the second click (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const leaveToHome = vi.fn().mockResolvedValue(undefined);
+    ctrl.mount(root, mountWaitCtxWithLeave(leaveToHome));
+    const leaveBtn = Array.from(root.querySelectorAll('button')).find(
+      (b) => b.textContent === '나가기',
+    ) as HTMLButtonElement;
+    expect(leaveBtn).not.toBeUndefined();
+
+    leaveBtn.click();
+    expect(leaveBtn.textContent).toBe('한 번 더 누르면 나가요');
+    leaveBtn.click();
+
+    expect(leaveToHome).toHaveBeenCalledTimes(1);
+
+    ctrl.unmount();
+  });
+
+  describe('confirm timeout (fake timers)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('reverts the label/class and does not leave once 3000ms pass without a second click (boundary)', async () => {
+      const { createHideController } = await import('../src/hide/index');
+      const ctrl = createHideController();
+      const root = document.createElement('div');
+      const leaveToHome = vi.fn().mockResolvedValue(undefined);
+      ctrl.mount(root, mountEditCtxWithLeave(Date.now() + 60_000, leaveToHome));
+      const leaveBtn = Array.from(root.querySelectorAll('button')).find(
+        (b) => b.textContent === '나가기',
+      ) as HTMLButtonElement;
+
+      leaveBtn.click();
+      vi.advanceTimersByTime(3000);
+
+      expect(leaveBtn.textContent).toBe('나가기');
+      expect(leaveBtn.className).toBe('mc-btn mc-btn--ghost');
+      expect(leaveToHome).not.toHaveBeenCalled();
+
+      ctrl.unmount();
+    });
+
+    it('clears the pending revert timer on unmount so no timer is left running (boundary: no leaked timer)', async () => {
+      const { createHideController } = await import('../src/hide/index');
+      const ctrl = createHideController();
+      const root = document.createElement('div');
+      const leaveToHome = vi.fn().mockResolvedValue(undefined);
+      ctrl.mount(root, mountEditCtxWithLeave(Date.now() + 60_000, leaveToHome));
+      const leaveBtn = Array.from(root.querySelectorAll('button')).find(
+        (b) => b.textContent === '나가기',
+      ) as HTMLButtonElement;
+      leaveBtn.click(); // arms the 3000ms revert timer
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      ctrl.unmount();
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+});
