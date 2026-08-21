@@ -4,6 +4,15 @@ import type { RoomStatePublic } from 'shared/protocol';
 import { getPhase } from '../src/phases';
 import { initSeek } from '../src/seek';
 
+// D8: fx is a visual side effect, not the result screen's own behavior --
+// stub it so these tests assert result.ts's own decisions, not fx internals
+// (already covered by fx.test.ts).
+vi.mock('../src/fx', () => ({
+  paintBurst: vi.fn(),
+  screenShake: vi.fn(),
+  attachPressFX: vi.fn(() => vi.fn()),
+}));
+
 const NOW = 1_700_000_000_000;
 
 const STICKMAN = {
@@ -248,5 +257,33 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
 
     expect(cafSpy).toHaveBeenCalled();
     cafSpy.mockRestore();
+  });
+
+  it('shows the found (red) banner variant when the seeker wins (normal: D5 banner variant)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    expect(root.querySelector('.mc-result-banner--found')).not.toBeNull();
+    expect(root.querySelector('.mc-result-banner--survived')).toBeNull();
+
+    getPhase('result').unmount();
+  });
+
+  it('shows the survived (green) banner variant when the hider survives the timeout (boundary: D5 banner variant)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    expect(root.querySelector('.mc-result-banner--survived')).not.toBeNull();
+    expect(root.querySelector('.mc-result-banner--found')).toBeNull();
+
+    getPhase('result').unmount();
   });
 });

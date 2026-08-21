@@ -5,9 +5,10 @@ import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { formatRemaining, remainingMs } from '../hide/timer';
+import { paintBurst, screenShake } from '../fx';
 import { applySeekClickAck, canClick, lockoutBadgeText } from './logic';
 import type { SeekEndPayload } from './logic';
-import { createRippleStore } from './ripple';
+import { createRippleStore, drawRipples } from './ripple';
 import type { ActiveRipple } from './ripple';
 import { resultController } from './result';
 
@@ -19,7 +20,29 @@ export interface SeekStartPayload {
 }
 
 const TIMER_TICK_MS = 500;
-const RIPPLE_STROKE = 'rgba(120, 120, 120,';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// D1: inline hourglass, red sand for the seek (danger/pursuit) phase --
+// deliberately not the DNA's green (that reference icon is the hide phase).
+function createHourglassIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '20');
+  svg.setAttribute('height', '20');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('mc-seek-hourglass');
+
+  const frame = document.createElementNS(SVG_NS, 'path');
+  frame.setAttribute('d', 'M5 2h14v3l-6 7 6 7v3H5v-3l6-7-6-7V2z');
+  frame.classList.add('mc-seek-hourglass-frame');
+
+  const sand = document.createElementNS(SVG_NS, 'path');
+  sand.setAttribute('d', 'M8 4h8l-4 5-4-5zM8 20h8l-4-5-4 5z');
+  sand.classList.add('mc-seek-hourglass-sand');
+
+  svg.append(frame, sand);
+  return svg;
+}
 
 // D1: module-level "server-state cache" for the two payloads that race
 // room:state -- initSeek's listeners run before any mount can, so a mount
@@ -50,27 +73,32 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     return;
   }
   const { background, stickman, endsAt } = payload;
+  const isSeeker = ctx.state.role !== 'hider';
 
-  const topBar = document.createElement('div');
+  // D1: top-center HUD -- hourglass + mm:ss timer + phase label (spectator branch).
+  const hud = document.createElement('div');
+  hud.className = 'mc-seek-hud';
   const timerEl = document.createElement('span');
-  topBar.appendChild(timerEl);
-  if (ctx.state.role === 'hider') {
-    const spectatorBadge = document.createElement('span');
-    spectatorBadge.textContent = '관전';
-    spectatorBadge.style.color = '#999';
-    spectatorBadge.style.float = 'right';
-    topBar.appendChild(spectatorBadge);
-  }
-  root.appendChild(topBar);
+  timerEl.className = 'mc-seek-hud-timer';
+  const hudLabel = document.createElement('span');
+  hudLabel.className = 'mc-hud-label';
+  hudLabel.textContent = isSeeker ? '찾아라!' : '관전 중';
+  hud.append(createHourglassIcon(), timerEl, hudLabel);
+  root.appendChild(hud);
 
-  // D5: fixed bottom-right lockout countdown badge, plain gray, no shake/overlay.
-  const badgeEl = document.createElement('div');
-  badgeEl.style.position = 'fixed';
-  badgeEl.style.right = '8px';
-  badgeEl.style.bottom = '8px';
-  badgeEl.style.color = '#999';
-  badgeEl.style.fontSize = '0.85em';
-  root.appendChild(badgeEl);
+  // D1: bottom-right oversized remaining-seconds readout (.mc-hud-num contract).
+  const remainEl = document.createElement('div');
+  remainEl.className = 'mc-hud-num mc-seek-remain';
+  root.appendChild(remainEl);
+
+  // D2: bottom-left lockout chip -- a red-tinted .mc-keycap, hidden when not locked.
+  const lockoutEl = document.createElement('div');
+  lockoutEl.className = 'mc-seek-lockout';
+  lockoutEl.hidden = true;
+  const lockoutChip = document.createElement('span');
+  lockoutChip.className = 'mc-keycap';
+  lockoutEl.appendChild(lockoutChip);
+  root.appendChild(lockoutEl);
 
   const container = document.createElement('div');
   container.style.position = 'relative';
@@ -110,13 +138,7 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     // 'seek' style: no ink outline — the camouflage has to actually work.
     drawStickman(overlayCtx, stickman, 'seek');
-    for (const ripple of ripples) {
-      overlayCtx.beginPath();
-      overlayCtx.strokeStyle = `${RIPPLE_STROKE} ${ripple.alpha})`;
-      overlayCtx.lineWidth = 2;
-      overlayCtx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
-      overlayCtx.stroke();
-    }
+    drawRipples(overlayCtx, ripples);
   }
   redrawOverlay([]);
 
@@ -126,21 +148,31 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     redrawOverlay(active);
     rafHandle = active.length > 0 ? window.requestAnimationFrame(rippleFrame) : null;
   }
+  // D4: canvas-space miss coords -> screen coords for the DOM paint burst.
+  // Skipped when the coords fall outside the overlay canvas's own bounds
+  // (the "rect") -- there is nothing on-screen there to burst at.
+  function triggerMissBurst(x: number, y: number): void {
+    if (x < 0 || y < 0 || x > overlayCanvas.width || y > overlayCanvas.height) return;
+    const rect = overlayCanvas.getBoundingClientRect();
+    paintBurst(rect.left + x + window.scrollX, rect.top + y + window.scrollY, { count: 8 });
+  }
   function onSeekMiss(payload: unknown): void {
     const { x, y } = payload as { x: number; y: number };
     rippleStore.add(x, y);
     if (rafHandle === null) {
       rafHandle = window.requestAnimationFrame(rippleFrame);
     }
+    triggerMissBurst(x, y);
   }
   ctx.socket.on('seek:miss', onSeekMiss);
 
-  // D5: self-lockout badge, shared between a real 3s miss-lock and the brief
+  // D2/D5: self-lockout chip, shared between a real 3s miss-lock and the brief
   // 1s flash on a raced 'locked' ack (see applySeekClickAck).
   let lockedUntil: number | null = null;
   function renderBadge(): void {
     const text = lockoutBadgeText(Date.now(), lockedUntil);
-    badgeEl.textContent = text ?? '';
+    lockoutChip.textContent = text ? `⏳ ${text}` : '';
+    lockoutEl.hidden = text === null;
     container.style.cursor = text ? 'wait' : 'default';
   }
 
@@ -152,17 +184,24 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     inFlight = true;
     void seekClick(ctx, e.offsetX, e.offsetY).then((ack) => {
       inFlight = false;
+      const wasUnlocked = canClick(Date.now(), lockedUntil);
       lockedUntil = applySeekClickAck(ack, Date.now(), lockedUntil);
+      // D2: shake once, only on the transition into a lock (not on a
+      // 'locked'-ack extension of an already-active lock).
+      if (wasUnlocked && !canClick(Date.now(), lockedUntil)) {
+        screenShake(container, { intensityPx: 4 });
+      }
       renderBadge();
     });
   }
-  const isSeeker = ctx.state.role !== 'hider';
   if (isSeeker) {
     overlayCanvas.addEventListener('click', onOverlayClick);
   }
 
   function tick(): void {
-    timerEl.textContent = formatRemaining(remainingMs(endsAt, Date.now()));
+    const ms = remainingMs(endsAt, Date.now());
+    timerEl.textContent = formatRemaining(ms);
+    remainEl.textContent = String(Math.ceil(ms / 1000));
     renderBadge();
   }
   tick();

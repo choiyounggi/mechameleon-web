@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { createRippleStore, RIPPLE_LIFETIME_MS } from '../src/seek/ripple';
+import { describe, expect, it, vi } from 'vitest';
+import { createRippleStore, drawRipples, RIPPLE_LIFETIME_MS } from '../src/seek/ripple';
+
+function makeFakeCtx() {
+  return {
+    beginPath: vi.fn(),
+    stroke: vi.fn(),
+    arc: vi.fn(),
+    strokeStyle: '',
+    lineWidth: 0,
+  } as unknown as CanvasRenderingContext2D;
+}
 
 describe('createRippleStore (D4): miss-ripple lifecycle, pure and rAF-free', () => {
   it('reports a freshly added ripple at its start radius/alpha (normal)', () => {
@@ -34,5 +44,30 @@ describe('createRippleStore (D4): miss-ripple lifecycle, pure and rAF-free', () 
     store.add(0, 0);
 
     expect(store.active(RIPPLE_LIFETIME_MS)).toEqual([]);
+  });
+});
+
+describe('drawRipples (D3): two-layer paint ring render helper', () => {
+  it('strokes an outer and inner ring per ripple, both at the ripple radius/alpha (normal)', () => {
+    const ctx = makeFakeCtx();
+    const ripples = [{ x: 5, y: 6, bornAt: 0, radius: 20, alpha: 0.2 }];
+
+    drawRipples(ctx, ripples);
+
+    expect(ctx.arc).toHaveBeenCalledTimes(2);
+    expect(ctx.stroke).toHaveBeenCalledTimes(2);
+    // outer ring: full ripple radius; inner ring: a smaller concentric radius.
+    expect(ctx.arc).toHaveBeenNthCalledWith(1, 5, 6, 20, 0, Math.PI * 2);
+    const [, , innerRadius] = (ctx.arc as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(innerRadius).toBeLessThan(20);
+    expect(innerRadius).toBeGreaterThan(0);
+  });
+
+  it('draws nothing when there are no active ripples (error/empty)', () => {
+    const ctx = makeFakeCtx();
+
+    drawRipples(ctx, []);
+
+    expect(ctx.stroke).not.toHaveBeenCalled();
   });
 });
