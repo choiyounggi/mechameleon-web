@@ -7,6 +7,7 @@ import {
   zRoomJoinReq,
   zSeekClickReq,
   zSetBackgroundReq,
+  zSetHiderCountReq,
 } from 'shared/protocol';
 import { type Emit, RoomEngine, type Scheduler, realRng } from './engine/room-engine';
 
@@ -125,6 +126,15 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
 
       const playerId = myPlayerId;
       ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.setBackground(playerId, parsed.data.background)));
+    });
+
+    socket.on('room:setHiderCount', (req, ack) => {
+      const parsed = zSetHiderCountReq.safeParse(req);
+      if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
+      if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
+
+      const playerId = myPlayerId;
+      ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.setHiderCount(playerId, parsed.data.count)));
     });
 
     socket.on('game:start', (ack) => {

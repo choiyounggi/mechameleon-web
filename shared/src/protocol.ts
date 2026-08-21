@@ -40,6 +40,15 @@ export interface RoomStatePublic {
   players: PlayerPublic[];
   background: Background | null;
   endsAt: number | null;
+  /** Host-configured hider count for the next round; null = auto (floor(n/2)). */
+  hiderCount: number | null;
+}
+
+/** One hider's live stickman, broadcast at `phase:seek` so seekers can render every hider. */
+export interface SeekStickman {
+  playerId: string;
+  nickname: string;
+  stickman: StickmanState;
 }
 
 /** One row of the public room list (lobby browser). */
@@ -81,6 +90,7 @@ export type ErrorCode =
   | 'NOT_SEEKER'
   | 'LOCKED'
   | 'BAD_PAYLOAD'
+  | 'BAD_COUNT'
   | 'NEED_BACKGROUND'
   | 'NEED_PLAYERS'
   | 'WRONG_PASSWORD';
@@ -186,6 +196,13 @@ export const zSeekClickReq = z.object({ x: z.number(), y: z.number() });
 export type SeekClickReq = z.infer<typeof zSeekClickReq>;
 export type SeekClickAck = Result<{ result: 'hit' | 'miss' | 'locked' | 'rejected' }>;
 
+// null = auto (floor(n/2)); a non-null count must still be an integer in
+// [1, players.length-1] at the point it's applied, but that range check is
+// engine-side (BAD_COUNT) since it depends on live room size -- this schema
+// only enforces the static shape (int or null), everything else -> BAD_PAYLOAD.
+export const zSetHiderCountReq = z.object({ count: z.union([z.number().int(), z.null()]) });
+export type SetHiderCountReq = z.infer<typeof zSetHiderCountReq>;
+
 // ---- Socket.io event maps -----------------------------------------------------
 
 export interface ServerToClientEvents {
@@ -193,13 +210,14 @@ export interface ServerToClientEvents {
   'game:role': (payload: { role: 'hider' | 'seeker' }) => void;
   'phase:hide': (payload: { background: Background; endsAt: number }) => void;
   'phase:hideWait': (payload: { endsAt: number }) => void;
-  'phase:seek': (payload: { background: Background; stickman: StickmanState; endsAt: number }) => void;
+  'phase:seek': (payload: { background: Background; stickmen: SeekStickman[]; endsAt: number }) => void;
   'seek:miss': (payload: { x: number; y: number; by: string }) => void;
+  // One hider revealed by a hit; the game keeps running until every hider is found.
+  'seek:found': (payload: { playerId: string; nickname: string; by: string; remaining: number }) => void;
   'game:end': (payload: {
     winner: Winner;
-    foundBy?: string;
-    stickman: StickmanState | null;
-    reason: 'found' | 'timeout';
+    stickmen: Array<{ playerId: string; nickname: string; stickman: StickmanState; found: boolean }>;
+    reason: 'all_found' | 'timeout';
   }) => void;
   // Mid-game abort: the room dropped below a playable state (hider left, or
   // fewer than MIN_PLAYERS remain) — everyone returns to the lobby.
@@ -211,6 +229,7 @@ export interface ClientToServerEvents {
   'room:join': (req: RoomJoinReq, ack: (res: RoomJoinAck) => void) => void;
   'rooms:list': (ack: (res: { ok: true; rooms: RoomSummary[] }) => void) => void;
   'room:setBackground': (req: SetBackgroundReq, ack: (res: Result) => void) => void;
+  'room:setHiderCount': (req: SetHiderCountReq, ack: (res: Result) => void) => void;
   'game:start': (ack: (res: Result) => void) => void;
   'hide:update': (req: HideUpdateReq) => void;
   'hide:confirm': (ack: (res: Result) => void) => void;

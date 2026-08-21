@@ -15,6 +15,7 @@ import {
   type RoomStatePublic,
   type RoomSummary,
   SEEK_MS,
+  type SeekStickman,
   type ServerToClientEvents,
   type StickmanState,
   type Winner,
@@ -54,9 +55,12 @@ interface Room {
   password: string | null;
   phase: 'lobby' | 'hide' | 'seek' | 'result';
   players: Player[]; // join order; players[0] is host unless host left and was reassigned
-  hiderId: string | null;
+  hiderIds: Set<string>; // insertion order = seek-phase hit-test priority order
+  stickmen: Map<string, StickmanState>; // per-hider stickman, keyed by playerId
+  confirmed: Set<string>; // hiderIds who have hideConfirm'd this round
+  found: Set<string>; // hiderIds already hit this round (subset of hiderIds)
+  hiderCount: number | null; // host-configured; null = auto (floor(n/2))
   background: Background | null;
-  stickman: StickmanState | null;
   endsAt: number | null;
   lockouts: Map<string, number>; // playerId -> lockedUntil (epoch ms)
   hideTimer: unknown | null;
@@ -96,9 +100,12 @@ export class RoomEngine {
       password: opts.isPrivate ? (opts.password ?? null) : null,
       phase: 'lobby',
       players: [{ id: playerId, nickname, isHost: true }],
-      hiderId: null,
+      hiderIds: new Set(),
+      stickmen: new Map(),
+      confirmed: new Set(),
+      found: new Set(),
+      hiderCount: null,
       background: null,
-      stickman: null,
       endsAt: null,
       lockouts: new Map(),
       hideTimer: null,
@@ -131,9 +138,12 @@ export class RoomEngine {
     const room = this.findRoomByPlayer(playerId);
     if (!room) return;
 
-    const wasHider = room.hiderId === playerId;
     room.players = room.players.filter((p) => p.id !== playerId);
     room.lockouts.delete(playerId);
+    room.hiderIds.delete(playerId);
+    room.stickmen.delete(playerId);
+    room.confirmed.delete(playerId);
+    room.found.delete(playerId);
     this.playerRooms.delete(playerId);
 
     if (room.players.length === 0) {
@@ -149,14 +159,27 @@ export class RoomEngine {
     }
 
     if (room.phase === 'hide' || room.phase === 'seek') {
-      const seekersLeft = room.players.some((p) => p.id !== room.hiderId);
-      if (wasHider || !seekersLeft || room.players.length < MIN_PLAYERS) {
-        // The game is no longer playable — abort it and send everyone back to
-        // the lobby instead of showing a result screen.
-        this.emit('all', 'game:aborted', {
-          reason: wasHider ? 'hider_left' : 'not_enough_players',
-        });
+      if (room.hiderIds.size === 0) {
+        // Abort only fires once every hider is gone — a partial hider
+        // departure just shrinks the game (below).
+        this.emit('all', 'game:aborted', { reason: 'hider_left' });
         this.resetToLobby(room);
+        return;
+      }
+      const seekersLeft = room.players.some((p) => !room.hiderIds.has(p.id));
+      if (!seekersLeft || room.players.length < MIN_PLAYERS) {
+        this.emit('all', 'game:aborted', { reason: 'not_enough_players' });
+        this.resetToLobby(room);
+        return;
+      }
+      if (room.phase === 'hide' && [...room.hiderIds].every((id) => room.confirmed.has(id))) {
+        // The departure was the last unconfirmed hider — everyone remaining is ready.
+        this.beginSeekPhase(room);
+        return;
+      }
+      if (room.phase === 'seek' && room.found.size === room.hiderIds.size) {
+        // The departed hider was the last unfound one.
+        this.enterResult(room, 'seekers', 'all_found');
         return;
       }
       this.broadcastState(room);
@@ -178,6 +201,23 @@ export class RoomEngine {
     return { ok: true };
   }
 
+  setHiderCount(playerId: string, count: number | null): Result {
+    const room = this.findRoomByPlayer(playerId);
+    if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
+    if (!this.isHost(room, playerId)) return { ok: false, code: 'NOT_HOST' };
+    if (room.phase !== 'lobby') return { ok: false, code: 'BAD_PHASE' };
+    if (count !== null) {
+      const max = room.players.length - 1;
+      if (!Number.isInteger(count) || count < 1 || count > max) {
+        return { ok: false, code: 'BAD_COUNT' };
+      }
+    }
+
+    room.hiderCount = count;
+    this.broadcastState(room);
+    return { ok: true };
+  }
+
   start(playerId: string): Result {
     const room = this.findRoomByPlayer(playerId);
     if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
@@ -186,20 +226,28 @@ export class RoomEngine {
     if (room.players.length < MIN_PLAYERS) return { ok: false, code: 'NEED_PLAYERS' };
     if (!room.background) return { ok: false, code: 'NEED_BACKGROUND' };
 
-    const hider = room.players[Math.floor(this.rng() * room.players.length)];
-    room.hiderId = hider.id;
-    room.stickman = this.defaultStickman(room.background);
+    const k = this.effectiveHiderCount(room);
+    const hiders = this.pickHiders(room, k);
+    room.hiderIds = new Set(hiders.map((p) => p.id));
+    room.stickmen = new Map();
+    room.confirmed = new Set();
+    room.found = new Set();
+    hiders.forEach((hider, i) => {
+      room.stickmen.set(hider.id, this.defaultStickman(room.background!, i, k));
+    });
+
     for (const p of room.players) {
-      this.emit(p.id, 'game:role', { role: p.id === hider.id ? 'hider' : 'seeker' });
+      this.emit(p.id, 'game:role', { role: room.hiderIds.has(p.id) ? 'hider' : 'seeker' });
     }
 
     room.phase = 'hide';
     room.endsAt = Date.now() + HIDE_MS;
     room.hideTimer = this.scheduler.setTimeout(() => this.onHideExpire(room.code), HIDE_MS);
 
-    this.emit(hider.id, 'phase:hide', { background: room.background, endsAt: room.endsAt });
     for (const p of room.players) {
-      if (p.id !== hider.id) {
+      if (room.hiderIds.has(p.id)) {
+        this.emit(p.id, 'phase:hide', { background: room.background, endsAt: room.endsAt });
+      } else {
         this.emit(p.id, 'phase:hideWait', { endsAt: room.endsAt });
       }
     }
@@ -209,31 +257,47 @@ export class RoomEngine {
 
   hideUpdate(playerId: string, stickman: StickmanState): void {
     const room = this.findRoomByPlayer(playerId);
-    if (!room || room.phase !== 'hide' || room.hiderId !== playerId) return;
+    if (!room || room.phase !== 'hide' || !room.hiderIds.has(playerId)) return;
     // Invariant: background is always set by `start()`, before phase can reach 'hide'.
-    room.stickman = this.clampStickman(stickman, room.background!);
+    room.stickmen.set(playerId, this.clampStickman(stickman, room.background!));
   }
 
   hideConfirm(playerId: string): Result {
     const room = this.findRoomByPlayer(playerId);
     if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
     if (room.phase !== 'hide') return { ok: false, code: 'BAD_PHASE' };
-    if (room.hiderId !== playerId) return { ok: false, code: 'NOT_HIDER' };
+    if (!room.hiderIds.has(playerId)) return { ok: false, code: 'NOT_HIDER' };
+    if (room.confirmed.has(playerId)) return { ok: true }; // idempotent re-confirm
 
-    this.beginSeekPhase(room);
+    room.confirmed.add(playerId);
+    if ([...room.hiderIds].every((id) => room.confirmed.has(id))) {
+      this.beginSeekPhase(room);
+    }
     return { ok: true };
   }
 
   click(playerId: string, x: number, y: number): 'hit' | 'miss' | 'locked' | 'rejected' {
     const room = this.findRoomByPlayer(playerId);
-    if (!room || room.phase !== 'seek' || playerId === room.hiderId) return 'rejected';
+    if (!room || room.phase !== 'seek' || room.hiderIds.has(playerId)) return 'rejected';
 
     const lockedUntil = room.lockouts.get(playerId) ?? 0;
     if (Date.now() < lockedUntil) return 'locked';
 
-    // Invariant: stickman is always set at `start()`, before phase can reach 'seek'.
-    if (hitTest(room.stickman!, x, y)) {
-      this.enterResult(room, { winner: 'seekers', foundBy: playerId, reason: 'found' });
+    // Only unfound hiders are still hide-and-seek targets; walk hiderIds in
+    // insertion (selection) order so results are deterministic.
+    for (const hiderId of room.hiderIds) {
+      if (room.found.has(hiderId)) continue;
+      // Invariant: every hiderId has a stickman set at `start()`, before phase can reach 'seek'.
+      const stickman = room.stickmen.get(hiderId)!;
+      if (!hitTest(stickman, x, y)) continue;
+
+      room.found.add(hiderId);
+      const nickname = room.players.find((p) => p.id === hiderId)!.nickname;
+      const remaining = room.hiderIds.size - room.found.size;
+      this.emit('all', 'seek:found', { playerId: hiderId, nickname, by: playerId, remaining });
+      if (remaining === 0) {
+        this.enterResult(room, 'seekers', 'all_found');
+      }
       return 'hit';
     }
 
@@ -280,10 +344,29 @@ export class RoomEngine {
     throw new Error('ROOM_CODE_EXHAUSTED');
   }
 
-  private defaultStickman(background: Background): StickmanState {
+  /** clamp(hiderCount ?? floor(n/2), 1, n-1) — applied only at start(); the stored value is never clamped. */
+  private effectiveHiderCount(room: Room): number {
+    const n = room.players.length;
+    const desired = room.hiderCount ?? Math.floor(n / 2);
+    return Math.min(Math.max(desired, 1), n - 1);
+  }
+
+  /** Deterministic partial Fisher-Yates over room.players: with rng()===0, returns players[0..k-1]. */
+  private pickHiders(room: Room, k: number): Player[] {
+    const pool = [...room.players];
+    for (let i = 0; i < k; i++) {
+      const j = i + Math.floor(this.rng() * (pool.length - i));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, k);
+  }
+
+  private defaultStickman(background: Background, index: number, hiderCount: number): StickmanState {
     // top-center of the page (see shared/stickman.ts initialStickman) with an
-    // unpainted white body — the hider paints with the brush
-    return initialStickman(background.width, background.height);
+    // unpainted white body — the hider paints with the brush. x is spread
+    // across the page by hider index so multiple hiders don't all overlap.
+    const stickman = initialStickman(background.width, background.height);
+    return { ...stickman, x: Math.round((background.width * (index + 1)) / (hiderCount + 1)) };
   }
 
   private clampStickman(stickman: StickmanState, background: Background): StickmanState {
@@ -313,9 +396,14 @@ export class RoomEngine {
     room.endsAt = Date.now() + SEEK_MS;
     room.seekTimer = this.scheduler.setTimeout(() => this.onSeekExpire(room.code), SEEK_MS);
 
+    const stickmen: SeekStickman[] = [...room.hiderIds].map((id) => ({
+      playerId: id,
+      nickname: room.players.find((p) => p.id === id)!.nickname,
+      stickman: room.stickmen.get(id)!,
+    }));
     this.emit('all', 'phase:seek', {
       background: room.background!,
-      stickman: room.stickman!,
+      stickmen,
       endsAt: room.endsAt,
     });
     this.broadcastState(room);
@@ -330,7 +418,7 @@ export class RoomEngine {
   private onSeekExpire(code: string): void {
     const room = this.rooms.get(code);
     if (!room || room.phase !== 'seek') return;
-    this.enterResult(room, { winner: 'hider', foundBy: undefined, reason: 'timeout' });
+    this.enterResult(room, 'hider', 'timeout');
   }
 
   private onResultExpire(code: string): void {
@@ -354,31 +442,33 @@ export class RoomEngine {
     }
   }
 
-  /** Back to the waiting room: wipes per-game state, keeps players/background. */
+  /** Back to the waiting room: wipes per-game state, keeps players/background/hiderCount. */
   private resetToLobby(room: Room): void {
     this.clearTimers(room);
     room.phase = 'lobby';
-    room.hiderId = null;
-    room.stickman = null;
+    room.hiderIds = new Set();
+    room.stickmen = new Map();
+    room.confirmed = new Set();
+    room.found = new Set();
     room.endsAt = null;
     room.lockouts.clear();
     this.broadcastState(room);
   }
 
-  private enterResult(
-    room: Room,
-    payload: { winner: Winner; foundBy: string | undefined; reason: 'found' | 'timeout' },
-  ): void {
+  private enterResult(room: Room, winner: Winner, reason: 'all_found' | 'timeout'): void {
     this.clearTimers(room);
     room.phase = 'result';
     room.endsAt = Date.now() + RESULT_MS;
     room.resultTimer = this.scheduler.setTimeout(() => this.onResultExpire(room.code), RESULT_MS);
-    this.emit('all', 'game:end', {
-      winner: payload.winner,
-      foundBy: payload.foundBy,
-      stickman: room.stickman,
-      reason: payload.reason,
-    });
+    // Every id still in hiderIds was in the room when the round ended (leavers
+    // are removed from hiderIds immediately), so the nickname lookup is safe.
+    const stickmen = [...room.hiderIds].map((id) => ({
+      playerId: id,
+      nickname: room.players.find((p) => p.id === id)!.nickname,
+      stickman: room.stickmen.get(id)!,
+      found: room.found.has(id),
+    }));
+    this.emit('all', 'game:end', { winner, stickmen, reason });
     this.broadcastState(room);
   }
 
@@ -396,6 +486,7 @@ export class RoomEngine {
       players,
       background: room.background,
       endsAt: room.endsAt,
+      hiderCount: room.hiderCount,
     };
   }
 
