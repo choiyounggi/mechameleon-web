@@ -5,7 +5,6 @@ import {
   zHideUpdateReq,
   zRoomCreateReq,
   zRoomJoinReq,
-  zRoomRestartReq,
   zSeekClickReq,
   zSetBackgroundReq,
 } from 'shared/protocol';
@@ -160,15 +159,6 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
         engine.click(playerId, parsed.data.x, parsed.data.y),
       );
       ack({ ok: true, result });
-    });
-
-    socket.on('room:restart', (req, ack) => {
-      const parsed = zRoomRestartReq.safeParse(req);
-      if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
-      if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
-
-      const playerId = myPlayerId;
-      ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.restart(playerId, parsed.data.mode)));
     });
 
     socket.on('disconnect', () => {

@@ -9,6 +9,7 @@ import {
   MIN_SCALE,
   type PlayerPublic,
   type Result,
+  RESULT_MS,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   type RoomStatePublic,
@@ -60,6 +61,7 @@ interface Room {
   lockouts: Map<string, number>; // playerId -> lockedUntil (epoch ms)
   hideTimer: unknown | null;
   seekTimer: unknown | null;
+  resultTimer: unknown | null;
 }
 
 /**
@@ -101,6 +103,7 @@ export class RoomEngine {
       lockouts: new Map(),
       hideTimer: null,
       seekTimer: null,
+      resultTimer: null,
     };
     this.rooms.set(code, room);
     this.playerRooms.set(playerId, code);
@@ -162,22 +165,6 @@ export class RoomEngine {
 
     // lobby/result phase: nothing to reconcile beyond removal.
     this.broadcastState(room);
-  }
-
-  /**
-   * Result-screen restart, host only: 'same' keeps the background for an
-   * instant rematch, 'new' clears it so the lobby steers the host to capture
-   * a fresh URL before the next round.
-   */
-  restart(playerId: string, mode: 'same' | 'new'): Result {
-    const room = this.findRoomByPlayer(playerId);
-    if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
-    if (!this.isHost(room, playerId)) return { ok: false, code: 'NOT_HOST' };
-    if (room.phase !== 'result') return { ok: false, code: 'BAD_PHASE' };
-
-    if (mode === 'new') room.background = null;
-    this.resetToLobby(room);
-    return { ok: true };
   }
 
   setBackground(playerId: string, background: Background): Result {
@@ -346,6 +333,12 @@ export class RoomEngine {
     this.enterResult(room, { winner: 'hider', foundBy: undefined, reason: 'timeout' });
   }
 
+  private onResultExpire(code: string): void {
+    const room = this.rooms.get(code);
+    if (!room || room.phase !== 'result') return;
+    this.resetToLobby(room);
+  }
+
   private clearTimers(room: Room): void {
     if (room.hideTimer !== null) {
       this.scheduler.clearTimeout(room.hideTimer);
@@ -354,6 +347,10 @@ export class RoomEngine {
     if (room.seekTimer !== null) {
       this.scheduler.clearTimeout(room.seekTimer);
       room.seekTimer = null;
+    }
+    if (room.resultTimer !== null) {
+      this.scheduler.clearTimeout(room.resultTimer);
+      room.resultTimer = null;
     }
   }
 
@@ -374,7 +371,8 @@ export class RoomEngine {
   ): void {
     this.clearTimers(room);
     room.phase = 'result';
-    room.endsAt = null;
+    room.endsAt = Date.now() + RESULT_MS;
+    room.resultTimer = this.scheduler.setTimeout(() => this.onResultExpire(room.code), RESULT_MS);
     this.emit('all', 'game:end', {
       winner: payload.winner,
       foundBy: payload.foundBy,
