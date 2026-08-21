@@ -119,6 +119,13 @@
   text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
 }
 
+/* F1 (r2 review): lobby.css's global .mc-error rule out-cascades the UA
+ * `[hidden] { display: none }` default in real browsers — force it here
+ * at higher specificity so the empty error pill actually disappears. */
+.mc-hide-actions .mc-error[hidden] {
+  display: none;
+}
+
 /* ==== wait screen: themed seeker hold (D6) ==== */
 
 .mc-hide-wait {
