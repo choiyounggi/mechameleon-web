@@ -333,6 +333,11 @@ describe('seek controller: lockout shake (D2)', () => {
     await Promise.resolve();
 
     expect(lockoutEl.hidden).toBe(false);
+    // r1/F1: assert the chip's full text is present untruncated in the DOM
+    // (a CSS-only clip wouldn't show up here, but a logic regression that
+    // drops the icon or the count would).
+    const chip = lockoutEl.querySelector('.mc-keycap')!;
+    expect(chip.textContent).toBe('⏳ 3…');
 
     // the running tick() interval re-renders the badge every 500ms; once the
     // 3s lock expires, the next tick should hide the chip again.
