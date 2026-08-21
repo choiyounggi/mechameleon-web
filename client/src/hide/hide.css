@@ -16,7 +16,7 @@
 /* top-center: hourglass + countdown + phase label (D1) */
 .mc-hud-timer {
   position: absolute;
-  top: var(--space-md);
+  top: var(--space-xs);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -39,6 +39,16 @@
 /* reduced clamp variant of the shared .mc-hud-num digits (D1) */
 .mc-hud-num--sm {
   font-size: clamp(28px, 5vw, 48px);
+}
+
+/* F2 (r1 review): the HUD timer sits directly on arbitrary scene backgrounds
+ * (no card) — strengthen its shadow + a thin ink stroke so the white digits
+ * stay readable on bright backgrounds, not just dark ones. */
+.mc-hud-timer .mc-hud-num--sm {
+  text-shadow:
+    0 1px 2px oklch(0% 0 0 / 0.7),
+    0 2px 12px oklch(0% 0 0 / 0.55);
+  -webkit-text-stroke: 1px oklch(18% 0.02 40 / 0.6);
 }
 
 /* bottom-center: control keycap strip (D3) */

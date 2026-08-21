@@ -130,6 +130,13 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
 
   const errorEl = document.createElement('div');
   errorEl.className = 'mc-error';
+  errorEl.hidden = true;
+  // F1 (r1 review): an empty .mc-error still renders a visible pill in real
+  // browsers, so keep it `hidden` whenever there's no message to show.
+  function setError(message: string): void {
+    errorEl.textContent = message;
+    errorEl.hidden = message === '';
+  }
 
   const confirmBtn = document.createElement('button');
   confirmBtn.type = 'button';
@@ -203,10 +210,10 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     activeStroke = null;
     if (accepted) {
       stickman = state;
-      errorEl.textContent = '';
+      setError('');
       sendUpdate();
     } else {
-      errorEl.textContent = '물감 한도에 도달했어요';
+      setError('물감 한도에 도달했어요');
     }
     redraw();
   }
@@ -282,16 +289,16 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     if (e.altKey) {
       // 스포이드: Alt(⌥)를 누른 채 클릭한 지점의 배경색을 붓 색으로
       if (!bgCtx) {
-        errorEl.textContent = '이미지를 읽을 수 없어요';
+        setError('이미지를 읽을 수 없어요');
         return;
       }
       const outcome = pickColor(bgCtx, e.offsetX, e.offsetY);
       if (outcome.ok) {
         currentColor = outcome.hex;
         swatch.style.background = currentColor;
-        errorEl.textContent = '';
+        setError('');
       } else {
-        errorEl.textContent = '이미지를 읽을 수 없어요';
+        setError('이미지를 읽을 수 없어요');
       }
       return;
     }
