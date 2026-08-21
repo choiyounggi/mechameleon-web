@@ -18,6 +18,16 @@ interface CleanupHolder {
 const FOLLOW_MARGIN_PX = 120;
 const TIMER_TICK_MS = 500;
 const URGENT_THRESHOLD_MS = 10_000;
+export const WAIT_MESSAGE_ROTATE_MS = 4_000;
+
+// The seeker's hold screen must read as "the hider is busy hiding right now",
+// never as server lag — rotate through themed copy so the wait stays legible.
+export const WAIT_MESSAGES = [
+  '지금 상대가 열심히 숨는 중이에요 🎨',
+  '카멜레온이 배경에 스며드는 중…',
+  '어디에 숨었을까? 미리 상상해 보세요 👀',
+  '숨는 시간이 끝나면 바로 수색 시작!',
+];
 
 interface KeycapSpec {
   text: string;
@@ -60,12 +70,16 @@ function mountWaitScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const wrap = document.createElement('div');
   wrap.className = 'mc-hide-wait';
 
+  const spinner = document.createElement('div');
+  spinner.className = 'mc-wait-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+
   const msg = document.createElement('p');
-  msg.className = 'mc-hud-label';
-  msg.textContent = '술래는 잠시 대기…';
+  msg.className = 'mc-hud-label mc-wait-msg';
+  msg.textContent = WAIT_MESSAGES[0];
   const timerEl = document.createElement('div');
   timerEl.className = 'mc-hud-num';
-  wrap.append(msg, timerEl);
+  wrap.append(spinner, msg, timerEl);
   root.appendChild(wrap);
 
   const endsAt = ctx.state.room?.endsAt ?? null;
@@ -76,8 +90,20 @@ function mountWaitScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   tick();
   const intervalId = window.setInterval(tick, TIMER_TICK_MS);
 
+  let msgIndex = 0;
+  function rotateMessage(): void {
+    msgIndex = (msgIndex + 1) % WAIT_MESSAGES.length;
+    msg.textContent = WAIT_MESSAGES[msgIndex];
+    msg.classList.remove('mc-wait-msg--swap');
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    msg.offsetWidth; // force reflow so the pop-in replays on every swap
+    msg.classList.add('mc-wait-msg--swap');
+  }
+  const msgIntervalId = window.setInterval(rotateMessage, WAIT_MESSAGE_ROTATE_MS);
+
   cleanupHolder.cleanup = () => {
     window.clearInterval(intervalId);
+    window.clearInterval(msgIntervalId);
   };
 }
 

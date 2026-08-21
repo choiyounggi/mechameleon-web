@@ -278,19 +278,73 @@ describe('hide HUD: error pill visibility (F1, r1 review)', () => {
 });
 
 describe('hide wait screen: themed seeker hold (D6, D8)', () => {
-  it('renders the themed wait screen with no inline gray styling for the seeker role (normal)', async () => {
-    const { createHideController } = await import('../src/hide/index');
-    const ctrl = createHideController();
-    const root = document.createElement('div');
-    const ctx = {
+  function mountWaitCtx() {
+    return {
       socket: { emit: () => {}, on: () => {}, off: () => {} },
       state: { playerId: 'p1', role: 'seeker', room: { endsAt: Date.now() + 60_000 }, hidePayload: null },
     } as never;
-    ctrl.mount(root, ctx);
+  }
+
+  it('renders the themed wait screen with no inline gray styling for the seeker role (normal)', async () => {
+    const { createHideController, WAIT_MESSAGES } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountWaitCtx());
     const wrap = root.querySelector('.mc-hide-wait') as HTMLElement;
     expect(wrap).not.toBeNull();
     expect(wrap.style.background).toBe('');
-    expect(wrap.textContent).toContain('술래는 잠시 대기…');
+    expect(wrap.textContent).toContain(WAIT_MESSAGES[0]);
     ctrl.unmount();
+  });
+
+  it('shows a spinner and opens with copy about the hider hiding, not server wait (normal)', async () => {
+    const { createHideController, WAIT_MESSAGES } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountWaitCtx());
+    expect(root.querySelector('.mc-wait-spinner')).not.toBeNull();
+    expect(WAIT_MESSAGES[0]).toContain('숨는 중');
+    expect(root.querySelector('.mc-wait-msg')?.textContent).toBe(WAIT_MESSAGES[0]);
+    ctrl.unmount();
+  });
+
+  describe('message rotation', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('rotates to the next message after WAIT_MESSAGE_ROTATE_MS (normal)', async () => {
+      const { createHideController, WAIT_MESSAGES, WAIT_MESSAGE_ROTATE_MS } = await import('../src/hide/index');
+      const ctrl = createHideController();
+      const root = document.createElement('div');
+      ctrl.mount(root, mountWaitCtx());
+      vi.advanceTimersByTime(WAIT_MESSAGE_ROTATE_MS);
+      expect(root.querySelector('.mc-wait-msg')?.textContent).toBe(WAIT_MESSAGES[1]);
+      ctrl.unmount();
+    });
+
+    it('wraps back to the first message after a full cycle (boundary)', async () => {
+      const { createHideController, WAIT_MESSAGES, WAIT_MESSAGE_ROTATE_MS } = await import('../src/hide/index');
+      const ctrl = createHideController();
+      const root = document.createElement('div');
+      ctrl.mount(root, mountWaitCtx());
+      vi.advanceTimersByTime(WAIT_MESSAGE_ROTATE_MS * WAIT_MESSAGES.length);
+      expect(root.querySelector('.mc-wait-msg')?.textContent).toBe(WAIT_MESSAGES[0]);
+      ctrl.unmount();
+    });
+
+    it('stops rotating after unmount so no stale interval keeps mutating the DOM (error)', async () => {
+      const { createHideController, WAIT_MESSAGES, WAIT_MESSAGE_ROTATE_MS } = await import('../src/hide/index');
+      const ctrl = createHideController();
+      const root = document.createElement('div');
+      ctrl.mount(root, mountWaitCtx());
+      ctrl.unmount();
+      vi.advanceTimersByTime(WAIT_MESSAGE_ROTATE_MS * 3);
+      expect(root.querySelector('.mc-wait-msg')?.textContent).toBe(WAIT_MESSAGES[0]);
+    });
   });
 });
