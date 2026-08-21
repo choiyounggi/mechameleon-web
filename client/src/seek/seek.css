@@ -107,19 +107,14 @@
   padding: var(--space-sm) var(--space-md);
 }
 
-/* r1 (non-blocking): center the non-host waiting line instead of letting it
-   sit flush against the left edge. */
-.mc-result-waiting {
+.mc-result-return-msg {
   text-align: center;
-  padding: 0 var(--space-md) var(--space-sm);
+  padding: 0 var(--space-md);
 }
 
-.mc-result-error {
+.mc-result-return-count {
   text-align: center;
-  color: var(--color-danger);
-  font-family: var(--font-body);
-  font-size: 13px;
-  padding: 0 var(--space-md);
+  padding: 0 var(--space-md) var(--space-sm);
 }
 
 @media (prefers-reduced-motion: reduce) {

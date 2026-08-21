@@ -91,12 +91,6 @@ export function hideConfirm(ctx: AppContext): Promise<Result> {
   });
 }
 
-export function restartGame(ctx: AppContext, mode: 'same' | 'new'): Promise<Result> {
-  return new Promise((resolve) => {
-    ctx.socket.emit('room:restart', { mode }, resolve);
-  });
-}
-
 export function seekClick(ctx: AppContext, x: number, y: number): Promise<SeekClickAck> {
   return new Promise((resolve) => {
     ctx.socket.emit('seek:click', { x, y }, resolve);

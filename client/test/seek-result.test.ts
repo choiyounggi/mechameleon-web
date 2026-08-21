@@ -123,56 +123,98 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     getPhase('result').unmount();
   });
 
-  it('offers the host both restart modes plus leave (normal: host view)', () => {
-    const { ctx, handlers } = makeCtx(makeRoom(), 'p1'); // host
-    initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
-    const root = document.createElement('div');
+  it('shows the return message and initial countdown to everyone, with no restart buttons or waiting message (normal: countdown replaces host branch)', () => {
+    const { ctx: hostCtx, handlers: hostHandlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 }), 'p1'); // host
+    initSeek(hostCtx);
+    hostHandlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const hostRoot = document.createElement('div');
+    getPhase('result').mount(hostRoot, hostCtx);
 
-    getPhase('result').mount(root, ctx);
+    expect(hostRoot.textContent).toContain('대기실로 돌아갑니다');
+    expect(hostRoot.querySelector('.mc-result-return-count')!.textContent).toBe('10');
+    expect(Array.from(hostRoot.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['나가기']);
+    expect(hostRoot.textContent).not.toContain('호스트가 다음 게임을 정하고 있어요');
 
-    const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toContain('같은 맵으로 다시 시작');
-    expect(labels).toContain('새 배경으로 다시 시작');
-    expect(labels).toContain('나가기');
+    getPhase('result').unmount();
+
+    const { ctx: guestCtx, handlers: guestHandlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 })); // p2, not host
+    initSeek(guestCtx);
+    guestHandlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const guestRoot = document.createElement('div');
+    getPhase('result').mount(guestRoot, guestCtx);
+
+    expect(guestRoot.textContent).toContain('대기실로 돌아갑니다');
+    expect(guestRoot.querySelector('.mc-result-return-count')!.textContent).toBe('10');
+    expect(Array.from(guestRoot.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['나가기']);
 
     getPhase('result').unmount();
   });
 
-  it('offers a non-host only the leave button and a waiting message (normal: guest view)', () => {
-    const { ctx, handlers } = makeCtx(makeRoom()); // p2, not host
-    initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
-    const root = document.createElement('div');
-
-    getPhase('result').mount(root, ctx);
-
-    const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toEqual(['나가기']);
-    expect(root.textContent).toContain('호스트가 다음 게임을 정하고 있어요');
-
-    getPhase('result').unmount();
-  });
-
-  it('re-renders the restart buttons when this player is promoted to host mid-result (boundary: host handover)', () => {
-    const { ctx, handlers } = makeCtx(makeRoom()); // p2, not host yet
+  it('counts down by one second per elapsed second, ticking on the 500ms interval (normal: tick decrease)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 }));
     initSeek(ctx);
     handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
-    expect(Array.from(root.querySelectorAll('button')).map((b) => b.textContent)).toEqual(['나가기']);
+    const countEl = root.querySelector('.mc-result-return-count')!;
+    expect(countEl.textContent).toBe('10');
 
-    // old host left: server reassigns and broadcasts the new player list
-    ctx.state.room = makeRoom({ players: [{ id: 'p2', nickname: '찾은이', isHost: true }] });
-    handlers.get('room:state')!(ctx.state.room);
+    vi.advanceTimersByTime(500);
+    expect(countEl.textContent).toBe('10'); // 9.5s left still ceils to 10
 
-    const labels = Array.from(root.querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels).toContain('같은 맵으로 다시 시작');
+    vi.advanceTimersByTime(500);
+    expect(countEl.textContent).toBe('9'); // 1s elapsed total
 
     getPhase('result').unmount();
   });
 
-  it('falls back to "게임 종료" and still offers a restart button when game:end never arrived (error/defensive)', async () => {
+  it('holds the countdown at 0 once endsAt has passed, never going negative (boundary: countdown floor)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom({ endsAt: NOW - 5_000 })); // already expired
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+    getPhase('result').mount(root, ctx);
+
+    expect(root.querySelector('.mc-result-return-count')!.textContent).toBe('0');
+
+    vi.advanceTimersByTime(500);
+    expect(root.querySelector('.mc-result-return-count')!.textContent).toBe('0');
+
+    getPhase('result').unmount();
+  });
+
+  it('shows only the return message, with an empty countdown, when the room has no endsAt (boundary: no endsAt)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom({ endsAt: null }));
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+    getPhase('result').mount(root, ctx);
+
+    expect(root.textContent).toContain('대기실로 돌아갑니다');
+    expect(root.querySelector('.mc-result-return-count')!.textContent).toBe('');
+
+    vi.advanceTimersByTime(1_000);
+    expect(root.querySelector('.mc-result-return-count')!.textContent).toBe('');
+
+    getPhase('result').unmount();
+  });
+
+  it('stops the countdown interval on unmount, leaving the DOM unchanged by later ticks (boundary: cleanup, no leaked interval)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 }));
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    const root = document.createElement('div');
+    getPhase('result').mount(root, ctx);
+    const countEl = root.querySelector('.mc-result-return-count')!;
+    expect(countEl.textContent).toBe('10');
+
+    getPhase('result').unmount();
+    vi.advanceTimersByTime(5_000);
+
+    expect(countEl.textContent).toBe('10');
+  });
+
+  it('falls back to "게임 종료" and still offers the leave button when game:end never arrived (error/defensive)', async () => {
     // `endPayload` is module-level state (D1), shared with every other test in
     // this file -- reset the module graph so this test does not depend on
     // running before another test's game:end fires (testing-data-and-isolation:
@@ -193,24 +235,6 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     freshGetPhase('result').unmount();
   });
 
-  it('the host restart buttons send the chosen mode to the server (normal: restart wiring)', () => {
-    const { ctx, handlers } = makeCtx(makeRoom(), 'p1'); // host
-    initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
-    const root = document.createElement('div');
-    getPhase('result').mount(root, ctx);
-    const buttons = Array.from(root.querySelectorAll('button'));
-    const emit = ctx.socket.emit as ReturnType<typeof vi.fn>;
-
-    buttons.find((b) => b.textContent === '같은 맵으로 다시 시작')!.click();
-    expect(emit).toHaveBeenCalledWith('room:restart', { mode: 'same' }, expect.any(Function));
-
-    buttons.find((b) => b.textContent === '새 배경으로 다시 시작')!.click();
-    expect(emit).toHaveBeenCalledWith('room:restart', { mode: 'new' }, expect.any(Function));
-
-    getPhase('result').unmount();
-  });
-
   it('"나가기" reloads the page, which disconnects and leaves the room (normal: leave wiring)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
@@ -228,26 +252,6 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     leaveBtn.click();
 
     expect(reloadSpy).toHaveBeenCalledTimes(1);
-
-    getPhase('result').unmount();
-  });
-
-  it('shows an error when the restart ack fails for a reason other than BAD_PHASE (error case)', async () => {
-    const { ctx, handlers } = makeCtx(makeRoom(), 'p1'); // host
-    initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
-    const root = document.createElement('div');
-    getPhase('result').mount(root, ctx);
-    const emit = ctx.socket.emit as ReturnType<typeof vi.fn>;
-    emit.mockImplementation((event: string, _req: unknown, ack: (res: unknown) => void) => {
-      if (event === 'room:restart') ack({ ok: false, code: 'NOT_HOST' });
-    });
-    const restartBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '같은 맵으로 다시 시작')!;
-
-    restartBtn.click();
-    await Promise.resolve(); // flush the ack promise's .then microtask
-    await Promise.resolve();
-    expect(root.textContent).toContain('다시 시작할 수 없어요');
 
     getPhase('result').unmount();
   });

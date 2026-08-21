@@ -1,6 +1,5 @@
 import type { Background, StickmanState } from 'shared/protocol';
 import type { AppContext } from '../net';
-import { restartGame } from '../net';
 import type { PhaseController } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { attachPressFX, paintBurst } from '../fx';
@@ -90,31 +89,34 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
     root.appendChild(stage);
     canvasCleanup = mountHighlightCanvas(stage, end.stickman, background);
   }
+
+  // Everyone sees the same countdown to the server-driven auto-return -- the
+  // server owns endsAt and broadcasts phase:'lobby' when it elapses, so this
+  // is a display-only readout (D1/D2: no client-side timer, derived every tick).
+  const returnMsg = document.createElement('p');
+  returnMsg.className = 'mc-hud-label mc-result-return-msg';
+  returnMsg.textContent = '대기실로 돌아갑니다';
+  const returnCount = document.createElement('div');
+  returnCount.className = 'mc-hud-num mc-result-return-count';
+  root.append(returnMsg, returnCount);
+
+  const endsAt = ctx.state.room?.endsAt ?? null;
+  function tick(): void {
+    if (endsAt === null) return;
+    const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+    returnCount.textContent = String(remainSec);
+  }
+  tick();
+  const intervalId = window.setInterval(tick, 500);
+
   cleanupHolder.cleanup = () => {
+    window.clearInterval(intervalId);
     canvasCleanup?.();
     detachers.forEach((detach) => detach());
   };
 
   const buttons = document.createElement('div');
   buttons.className = 'mc-result-buttons';
-  const errorEl = document.createElement('div');
-  errorEl.className = 'mc-result-error';
-
-  // Host decides the next round: same map for an instant rematch, or a fresh
-  // URL (background cleared, so the lobby demands a new capture). Everyone
-  // else waits for that choice or leaves.
-  const amHost = ctx.state.room?.players.find((p) => p.id === ctx.state.playerId)?.isHost ?? false;
-  if (amHost) {
-    buttons.append(
-      makeRestartButton(ctx, errorEl, detachers, '같은 맵으로 다시 시작', 'same'),
-      makeRestartButton(ctx, errorEl, detachers, '새 배경으로 다시 시작', 'new'),
-    );
-  } else {
-    const waiting = document.createElement('p');
-    waiting.className = 'mc-hud-label mc-result-waiting';
-    waiting.textContent = '호스트가 다음 게임을 정하고 있어요…';
-    root.appendChild(waiting);
-  }
 
   const leaveBtn = document.createElement('button');
   leaveBtn.type = 'button';
@@ -128,35 +130,11 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   detachers.push(attachPressFX(leaveBtn));
 
   buttons.appendChild(leaveBtn);
-  root.append(buttons, errorEl);
+  root.append(buttons);
 
   // D5: single entrance burst, centered on the banner.
   const rect = banner.getBoundingClientRect();
   paintBurst(rect.left + rect.width / 2, rect.top + rect.height / 2, { count: 14 });
-}
-
-function makeRestartButton(
-  ctx: AppContext,
-  errorEl: HTMLElement,
-  detachers: (() => void)[],
-  label: string,
-  mode: 'same' | 'new',
-): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = `mc-btn ${mode === 'same' ? 'mc-btn--green' : 'mc-btn--yellow'}`;
-  btn.textContent = label;
-  btn.addEventListener('click', () => {
-    void restartGame(ctx, mode).then((res) => {
-      // BAD_PHASE: the room already left the result phase — the room:state
-      // broadcast moves this client to the lobby anyway; report the rest.
-      if (!res.ok && res.code !== 'BAD_PHASE') {
-        errorEl.textContent = '다시 시작할 수 없어요';
-      }
-    });
-  });
-  detachers.push(attachPressFX(btn));
-  return btn;
 }
 
 function createResultController(): PhaseController {
@@ -173,10 +151,10 @@ function createResultController(): PhaseController {
       }
       render();
 
-      // The host can change while this screen is up (old host left, someone
-      // was promoted) — re-render so the new host gets the restart buttons.
-      // Guarded on phase because socket.io still calls a just-removed
-      // listener once after a same-event unmount (see lobby's mounted guard).
+      // Room state (e.g. host handover) can change while this screen is up --
+      // re-render so the screen stays consistent with it. Guarded on phase
+      // because socket.io still calls a just-removed listener once after a
+      // same-event unmount (see lobby's mounted guard).
       function onRoomState(): void {
         if (ctx.state.room?.phase === 'result') render();
       }

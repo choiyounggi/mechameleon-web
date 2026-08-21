@@ -182,11 +182,6 @@ export type SetBackgroundReq = z.infer<typeof zSetBackgroundReq>;
 export const zHideUpdateReq = z.object({ stickman: zStickmanState });
 export type HideUpdateReq = z.infer<typeof zHideUpdateReq>;
 
-// Result-screen restart (host only): 'same' keeps the background for an
-// instant rematch, 'new' clears it so the host is steered to a fresh URL.
-export const zRoomRestartReq = z.object({ mode: z.enum(['same', 'new']) });
-export type RoomRestartReq = z.infer<typeof zRoomRestartReq>;
-
 export const zSeekClickReq = z.object({ x: z.number(), y: z.number() });
 export type SeekClickReq = z.infer<typeof zSeekClickReq>;
 export type SeekClickAck = Result<{ result: 'hit' | 'miss' | 'locked' | 'rejected' }>;
@@ -220,5 +215,4 @@ export interface ClientToServerEvents {
   'hide:update': (req: HideUpdateReq) => void;
   'hide:confirm': (ack: (res: Result) => void) => void;
   'seek:click': (req: SeekClickReq, ack: (res: SeekClickAck) => void) => void;
-  'room:restart': (req: RoomRestartReq, ack: (res: Result) => void) => void;
 }
