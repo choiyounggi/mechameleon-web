@@ -344,6 +344,12 @@
   color: var(--color-ink-soft);
 }
 
+.mc-hider-count {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 .mc-start-hints {
   list-style: none;
   margin: 0;

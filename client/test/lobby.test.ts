@@ -13,6 +13,7 @@ function makeRoom(overrides: Partial<RoomStatePublic> = {}): RoomStatePublic {
     ],
     background: null,
     endsAt: null,
+    hiderCount: null,
     ...overrides,
   };
 }
@@ -377,6 +378,169 @@ describe('room screen player list', () => {
     expect(hostChip).not.toBeUndefined();
     expect(hostChip!.getAttribute('aria-label')).toBe('host (호스트)');
     expect(hostChip!.querySelector('svg')).not.toBeNull();
+
+    controller.unmount();
+  });
+});
+
+function fourPlayerRoom(overrides: Partial<RoomStatePublic> = {}): RoomStatePublic {
+  return makeRoom({
+    players: [
+      { id: 'host-1', nickname: 'host', isHost: true },
+      { id: 'g1', nickname: 'a', isHost: false },
+      { id: 'g2', nickname: 'b', isHost: false },
+      { id: 'g3', nickname: 'c', isHost: false },
+    ],
+    ...overrides,
+  });
+}
+
+const MINUS_LABEL = '[aria-label="숨는 사람 수 줄이기"]';
+const PLUS_LABEL = '[aria-label="숨는 사람 수 늘리기"]';
+
+describe('lobby hider count', () => {
+  it('shows the host the auto-split count with the "(자동 반반)" suffix, and clicking + emits display+1 (normal)', () => {
+    const room = fourPlayerRoom({ hiderCount: null });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.textContent).toContain('숨는 사람 2명 (자동 반반)');
+    const plusBtn = root.querySelector<HTMLButtonElement>(PLUS_LABEL)!;
+    expect(plusBtn.disabled).toBe(false);
+    plusBtn.click();
+    expect(ctx.socket.emit).toHaveBeenCalledWith('room:setHiderCount', { count: 3 }, expect.any(Function));
+
+    controller.unmount();
+  });
+
+  it('computes the auto split via floor(n/2) for an odd player count (boundary: odd auto calc)', () => {
+    const players = Array.from({ length: 7 }, (_, i) =>
+      i === 0
+        ? { id: 'host-1', nickname: 'host', isHost: true }
+        : { id: `g${i}`, nickname: `g${i}`, isHost: false },
+    );
+    const room = makeRoom({ players, hiderCount: null });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.textContent).toContain('숨는 사람 3명 (자동 반반)');
+
+    controller.unmount();
+  });
+
+  it('disables [-] once the display hits 1, leaving [+] enabled (boundary: lower bound)', () => {
+    const room = makeRoom({
+      players: [
+        { id: 'host-1', nickname: 'host', isHost: true },
+        { id: 'g1', nickname: 'a', isHost: false },
+        { id: 'g2', nickname: 'b', isHost: false },
+      ],
+      hiderCount: 1,
+    });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelector<HTMLButtonElement>(MINUS_LABEL)!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(PLUS_LABEL)!.disabled).toBe(false);
+
+    controller.unmount();
+  });
+
+  it('disables [+] once the display hits players-1, leaving [-] enabled (boundary: upper bound)', () => {
+    const room = fourPlayerRoom({ hiderCount: 3 });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelector<HTMLButtonElement>(PLUS_LABEL)!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(MINUS_LABEL)!.disabled).toBe(false);
+
+    controller.unmount();
+  });
+
+  it('disables both buttons in a 2-player room where the range collapses to [1,1] (boundary: 2 players)', () => {
+    const room = makeRoom({
+      players: [
+        { id: 'host-1', nickname: 'host', isHost: true },
+        { id: 'g1', nickname: 'a', isHost: false },
+      ],
+      hiderCount: null,
+    });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelector<HTMLButtonElement>(MINUS_LABEL)!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(PLUS_LABEL)!.disabled).toBe(true);
+    expect(root.textContent).toContain('숨는 사람 1명 (자동 반반)');
+
+    controller.unmount();
+  });
+
+  it('disables both buttons when fewer than 2 players are in the room (boundary: players<2)', () => {
+    const room = makeRoom({
+      players: [{ id: 'host-1', nickname: 'host', isHost: true }],
+      hiderCount: null,
+    });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelector<HTMLButtonElement>(MINUS_LABEL)!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>(PLUS_LABEL)!.disabled).toBe(true);
+
+    controller.unmount();
+  });
+
+  it('shows guests the same count as read-only text with no stepper buttons (guest read-only)', () => {
+    const room = fourPlayerRoom({ hiderCount: null });
+    const ctx = makeCtxAs('g1', room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.textContent).toContain('숨는 사람 2명 (자동 반반)');
+    expect(root.querySelector(MINUS_LABEL)).toBeNull();
+    expect(root.querySelector(PLUS_LABEL)).toBeNull();
+
+    controller.unmount();
+  });
+
+  it('re-renders the derived count from a fresh room:state push, with no locally-cached value (regression: derived state)', () => {
+    const room = fourPlayerRoom({ hiderCount: null });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+    expect(root.textContent).toContain('숨는 사람 2명 (자동 반반)');
+
+    // server pushes an updated room:state (e.g. after the stepper's ack) — the
+    // handler must re-derive from ctx.state.room, not from any cached value.
+    ctx.state.room = { ...room, hiderCount: 3 };
+    const onRoomState = (ctx.socket.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([event]) => event === 'room:state',
+    )?.[1] as () => void;
+    onRoomState();
+
+    expect(root.textContent).toContain('숨는 사람 3명');
+    expect(root.textContent).not.toContain('자동 반반');
 
     controller.unmount();
   });

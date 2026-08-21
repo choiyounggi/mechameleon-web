@@ -1,7 +1,7 @@
 import type { Background, ErrorCode, RoomStatePublic, RoomSummary } from 'shared/protocol';
 import { MIN_PLAYERS } from 'shared/protocol';
 import type { AppContext } from '../net';
-import { createRoom, joinRoom, listRooms, setBackground, startGame } from '../net';
+import { createRoom, joinRoom, listRooms, setBackground, setHiderCount, startGame } from '../net';
 import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
 import { requestCaptureFromUpload, requestCaptureFromUrl } from './capture-client';
@@ -20,6 +20,13 @@ const NICKNAME_STORAGE_KEY = 'mc-nickname';
 function isHost(ctx: AppContext): boolean {
   const players = ctx.state.room?.players ?? [];
   return players.find((p) => p.id === ctx.state.playerId)?.isHost ?? false;
+}
+
+/** Always derived from room state at render time — never cached locally. */
+function displayHiderCount(room: RoomStatePublic): number {
+  const n = room.players.length;
+  const raw = room.hiderCount ?? Math.floor(n / 2);
+  return Math.min(Math.max(raw, 1), Math.max(1, n - 1));
 }
 
 export function joinErrorMessage(code: ErrorCode): string {
@@ -463,6 +470,8 @@ export function createLobbyController(): PhaseController {
           wrap.appendChild(renderCaptureSection(room));
         }
 
+        wrap.appendChild(renderHiderCountRow(room, host));
+
         const startBtn = document.createElement('button');
         startBtn.type = 'button';
         startBtn.className = 'mc-btn mc-btn--green';
@@ -516,6 +525,51 @@ export function createLobbyController(): PhaseController {
         const dims = document.createElement('span');
         dims.textContent = `${background.width}×${background.height}`;
         wrap.append(preview, dims);
+      }
+
+      function renderHiderCountRow(room: RoomStatePublic, host: boolean): HTMLElement {
+        const row = document.createElement('div');
+        row.className = 'mc-hider-count';
+
+        const n = room.players.length;
+        const display = displayHiderCount(room);
+        const max = Math.max(1, n - 1);
+
+        if (host) {
+          const minusBtn = document.createElement('button');
+          minusBtn.type = 'button';
+          minusBtn.className = 'mc-btn mc-btn--ghost mc-hider-count__btn';
+          minusBtn.textContent = '−';
+          minusBtn.setAttribute('aria-label', '숨는 사람 수 줄이기');
+          minusBtn.disabled = n < 2 || display <= 1;
+          minusBtn.addEventListener('click', () => {
+            void setHiderCount(ctx, display - 1);
+          });
+          withPressFX(minusBtn);
+          row.appendChild(minusBtn);
+        }
+
+        const label = document.createElement('span');
+        label.className = 'mc-hider-count__label';
+        label.textContent =
+          room.hiderCount === null ? `숨는 사람 ${display}명 (자동 반반)` : `숨는 사람 ${display}명`;
+        row.appendChild(label);
+
+        if (host) {
+          const plusBtn = document.createElement('button');
+          plusBtn.type = 'button';
+          plusBtn.className = 'mc-btn mc-btn--ghost mc-hider-count__btn';
+          plusBtn.textContent = '+';
+          plusBtn.setAttribute('aria-label', '숨는 사람 수 늘리기');
+          plusBtn.disabled = n < 2 || display >= max;
+          plusBtn.addEventListener('click', () => {
+            void setHiderCount(ctx, display + 1);
+          });
+          withPressFX(plusBtn);
+          row.appendChild(plusBtn);
+        }
+
+        return row;
       }
 
       function renderCaptureSection(room: RoomStatePublic): HTMLElement {

@@ -80,6 +80,12 @@ export function setBackground(ctx: AppContext, background: Background): Promise<
   });
 }
 
+export function setHiderCount(ctx: AppContext, count: number | null): Promise<Result> {
+  return new Promise((resolve) => {
+    ctx.socket.emit('room:setHiderCount', { count }, resolve);
+  });
+}
+
 export function startGame(ctx: AppContext): Promise<Result> {
   return new Promise((resolve) => {
     ctx.socket.emit('game:start', resolve);
