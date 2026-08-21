@@ -492,6 +492,82 @@ describe('hide viewport zoom wiring (D1, D3, D5, D9)', () => {
   });
 });
 
+describe('hide HUD: pre-confirm color-mixing nudge (D1-D3, t4)', () => {
+  it('shows 0색 with a danger level immediately on mount, before any stroke is drawn (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const nudgeEl = root.querySelector('.mc-hide-nudge') as HTMLElement;
+    expect(nudgeEl).not.toBeNull();
+    expect(nudgeEl.dataset.level).toBe('danger');
+    expect(nudgeEl.textContent).toContain('0색');
+    ctrl.unmount();
+  });
+
+  it('updates to 1색 once a stroke is accepted on mouseup, still danger but with different text than 0색 (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const bgCanvas = root.querySelectorAll('canvas')[0] as HTMLCanvasElement;
+    const nudgeEl = root.querySelector('.mc-hide-nudge') as HTMLElement;
+    const textAtZero = nudgeEl.textContent;
+
+    bgCanvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup'));
+
+    expect(nudgeEl.dataset.level).toBe('danger');
+    expect(nudgeEl.textContent).toContain('1색');
+    expect(nudgeEl.textContent).not.toBe(textAtZero);
+    ctrl.unmount();
+  });
+
+  it('does not gate the confirm button on color count — clicking still fires hideConfirm at 0색 (boundary: no blocking)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const emit = vi.fn();
+    const ctx = {
+      socket: { emit, on: () => {}, off: () => {} },
+      state: {
+        playerId: 'p1',
+        role: 'hider',
+        room: null,
+        hidePayload: {
+          background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
+          endsAt: Date.now() + 60000,
+          stickman: { x: 720, y: 100, scale: 1, strokes: [] },
+        },
+      },
+    } as never;
+    ctrl.mount(root, ctx);
+    const confirmBtn = root.querySelector('.mc-btn--green') as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(false);
+    confirmBtn.click();
+    expect(emit).toHaveBeenCalledWith('hide:confirm', expect.anything());
+    ctrl.unmount();
+  });
+
+  it('coexists with the zoom HUD badge after a ctrl+wheel zoom — both render without clobbering each other (regression)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const bgCanvas = root.querySelectorAll('canvas')[0] as HTMLCanvasElement;
+    const container = bgCanvas.parentElement as HTMLElement;
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: 0, clientY: 0 }));
+
+    const zoomBadge = root.querySelector('.mc-hide-key__zoom') as HTMLElement;
+    const nudgeEl = root.querySelector('.mc-hide-nudge') as HTMLElement;
+    expect(zoomBadge.hidden).toBe(false);
+    expect(nudgeEl).not.toBeNull();
+    expect(nudgeEl.dataset.level).toBe('danger');
+    ctrl.unmount();
+  });
+});
+
 describe('hide leave button (D4/D5): two-step confirm before leaving', () => {
   it('edit screen: first click arms the confirm label + red class, second click leaves (normal)', async () => {
     const { createHideController } = await import('../src/hide/index');
