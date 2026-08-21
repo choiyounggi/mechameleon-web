@@ -270,3 +270,23 @@ describe('start-condition hints (regression: full room + no background looked br
     controller.unmount();
   });
 });
+
+describe('room screen player list', () => {
+  it('renders each player as a stickman chip, marking the host chip distinctly (normal)', () => {
+    const room = makeRoom();
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const chips = root.querySelectorAll('.mc-player-chip');
+    expect(chips).toHaveLength(2);
+    const hostChip = Array.from(chips).find((c) => c.classList.contains('mc-player-chip--host'));
+    expect(hostChip).not.toBeUndefined();
+    expect(hostChip!.getAttribute('aria-label')).toBe('host (호스트)');
+    expect(hostChip!.querySelector('svg')).not.toBeNull();
+
+    controller.unmount();
+  });
+});

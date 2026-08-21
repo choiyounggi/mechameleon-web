@@ -121,3 +121,21 @@ describe('lobby home — room list & private join', () => {
     ctrl.unmount();
   });
 });
+
+describe('lobby home — title stamp', () => {
+  it('renders the title as mc-title-paint spans with no legacy per-letter classes (regression: t1 D2)', async () => {
+    const net: MockNet = { rooms: [], joinAck: { ok: false, code: 'ROOM_NOT_FOUND' }, joinCalls: [] };
+    const ctx = makeCtx(net);
+    const root = document.createElement('div');
+    const ctrl = createLobbyController();
+    ctrl.mount(root, ctx);
+    await flush();
+
+    const h1 = root.querySelector('h1.mc-title-paint');
+    expect(h1).not.toBeNull();
+    const spans = Array.from(h1!.querySelectorAll('span'));
+    expect(spans.length).toBeGreaterThan(0);
+    expect(spans.every((s) => !s.className.includes('mc-letter'))).toBe(true);
+    ctrl.unmount();
+  });
+});

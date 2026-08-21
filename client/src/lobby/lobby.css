@@ -1,4 +1,6 @@
-/* Hallmark · screen: lobby · migrated verbatim from style.css (t1-foundation T2, D7/D17) — selectors and rules unchanged */
+/* Hallmark · screen: lobby · paint-pop arcade rewrite (t2-lobby T1, D6-D10) — dark keycap cards,
+ * player chips, red-splat errors. Shared button/keycap/title primitives live in style.css — do
+ * not redefine .mc-btn here. */
 
 /* ---- lobby home (studied-DNA screens) ---------------------------------- */
 
@@ -22,7 +24,7 @@
   border-right: 9px solid transparent;
   border-top-width: 14px;
   border-top-style: solid;
-  opacity: 0.85;
+  opacity: 0.95;
 }
 
 .mc-title {
@@ -33,10 +35,7 @@
   margin-bottom: var(--space-lg);
 }
 
-.mc-title h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 400;
+.mc-home .mc-title-paint {
   font-size: clamp(2rem, 6vw, 3.4rem);
   line-height: 1.05;
   letter-spacing: 0.01em;
@@ -44,16 +43,9 @@
   min-width: 0;
 }
 
-.mc-title h1 span {
-  display: inline-block;
+.mc-title-enter {
+  animation: mc-pop-in 420ms var(--ease-out) both;
 }
-
-.mc-letter-1 { color: var(--color-paint-red); transform: rotate(-3deg); }
-.mc-letter-2 { color: var(--color-paint-orange); transform: translateY(-2px); }
-.mc-letter-3 { color: var(--color-paint-yellow); transform: rotate(2deg); }
-.mc-letter-4 { color: var(--color-paint-green); transform: translateY(1px); }
-.mc-letter-5 { color: var(--color-paint-cyan); transform: rotate(-2deg); }
-.mc-letter-6 { color: var(--color-paint-violet); transform: translateY(-1px); }
 
 .mc-mascot {
   flex: 0 0 auto;
@@ -93,10 +85,10 @@
 
 .mc-panel {
   background: var(--color-card);
-  border: var(--rule-card);
+  border: 2px solid var(--color-ink-strong);
   border-radius: var(--radius-card);
   padding: var(--space-md);
-  box-shadow: 4px 4px 0 oklch(0% 0 0 / 0.08);
+  box-shadow: 0 5px 0 var(--color-ink-strong);
   /* column flex so inner content can pin to the shared bottom line */
   display: flex;
   flex-direction: column;
@@ -117,34 +109,41 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+  flex: 1 1 auto;
 }
 
 .mc-room-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   width: 100%;
   text-align: left;
-  background: var(--color-card);
-  border: 1.5px solid var(--color-line);
+  background: oklch(33% 0.022 42);
+  border: 2px solid var(--color-ink-strong);
   border-radius: var(--radius-card);
   padding: var(--space-sm) var(--space-md);
   cursor: pointer;
-  transition: transform var(--dur-quick) var(--ease-out), border-color var(--dur-quick) var(--ease-out);
+  box-shadow: 0 4px 0 var(--color-ink-strong);
+  transition: transform var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick) var(--ease-out);
 }
 
 .mc-room-card:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: var(--color-ink);
+  transform: translateY(-2px) rotate(-0.5deg);
+  box-shadow: 0 6px 0 var(--color-ink-strong);
 }
 
 .mc-room-card:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--color-ink-strong);
 }
 
 .mc-room-card:disabled {
-  opacity: 0.45;
+  transform: none;
+  filter: saturate(0);
+  opacity: 0.5;
   cursor: default;
+  box-shadow: 0 4px 0 var(--color-ink-strong);
 }
 
 .mc-room-name {
@@ -170,15 +169,16 @@
   padding: 2px 10px;
   border-radius: var(--radius-chip);
   background: var(--color-keycap);
-  color: var(--color-ink);
+  color: var(--color-ink-strong);
 }
 
 .mc-chip--locked {
-  background: var(--color-paper-2);
+  background: var(--color-hint);
 }
 
 .mc-chip--playing {
-  background: oklch(90% 0.09 95);
+  background: var(--color-danger);
+  color: var(--color-ink-strong);
 }
 
 .mc-empty {
@@ -202,12 +202,8 @@
   flex: 1 1 auto;
 }
 
-.mc-panel > .mc-form > .mc-btn {
+.mc-panel > .mc-form > .mc-form-submit {
   margin-top: auto;
-}
-
-.mc-room-list {
-  flex: 1 1 auto;
 }
 
 .mc-input,
@@ -229,6 +225,19 @@
   border-color: var(--color-ink-soft);
 }
 
+.mc-input:focus-visible,
+.mc-form input:focus-visible,
+.mc-nick input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.mc-input::placeholder,
+.mc-form input::placeholder,
+.mc-nick input::placeholder {
+  color: var(--color-ink-soft);
+}
+
 .mc-visibility {
   display: flex;
   gap: var(--space-sm);
@@ -237,58 +246,40 @@
 .mc-visibility button {
   flex: 1 1 0;
   padding: 8px 0;
-  border-radius: var(--radius-chip);
-  border: 1.5px solid var(--color-line);
+  border-radius: 10px;
+  border: 1.5px solid var(--color-ink-strong);
   background: var(--color-card);
   color: var(--color-ink-soft);
   font-weight: 700;
   cursor: pointer;
-  transition: background var(--dur-quick) var(--ease-out);
+  box-shadow: 0 2px 0 var(--color-ink-strong);
+  transition: transform var(--dur-quick) var(--ease-out), background var(--dur-quick) var(--ease-out);
+}
+
+.mc-visibility button:hover {
+  transform: translateY(-1px);
+}
+
+.mc-visibility button:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 var(--color-ink-strong);
 }
 
 .mc-visibility button[aria-pressed='true'] {
   background: var(--color-keycap);
-  border-color: var(--color-ink);
-  color: var(--color-ink);
-}
-
-.mc-btn {
-  font-size: 15px;
-  font-weight: 700;
-  padding: 10px 18px;
-  border: var(--rule-card);
-  border-radius: var(--radius-card);
-  background: var(--color-accent);
-  color: var(--color-ink);
-  cursor: pointer;
-  box-shadow: 3px 3px 0 oklch(0% 0 0 / 0.15);
-  transition: transform var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick) var(--ease-out);
-}
-
-.mc-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 4px 5px 0 oklch(0% 0 0 / 0.15);
-}
-
-.mc-btn:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: 1px 1px 0 oklch(0% 0 0 / 0.15);
-}
-
-.mc-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  box-shadow: none;
-}
-
-.mc-btn--quiet {
-  background: var(--color-card);
+  color: var(--color-ink-strong);
 }
 
 .mc-error {
-  color: var(--color-danger);
+  display: inline-block;
+  color: var(--color-ink-strong);
+  background: var(--color-danger);
   font-size: 13px;
+  font-weight: 700;
   margin: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transform: rotate(-1deg);
 }
 
 .mc-room-screen {
@@ -309,25 +300,42 @@
   gap: var(--space-sm);
 }
 
-.mc-room-screen li {
+.mc-player-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--color-card);
   border: 1.5px solid var(--color-line);
   border-radius: var(--radius-chip);
-  padding: 4px 14px;
+  padding: 4px 14px 4px 8px;
   font-size: 14px;
+}
+
+.mc-player-chip svg {
+  flex: 0 0 auto;
+}
+
+.mc-player-chip--host {
+  border-color: var(--color-hint);
+}
+
+.mc-player-chip--host::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-hint);
+  border: 1.5px solid var(--color-ink-strong);
 }
 
 .mc-code {
   font-family: var(--font-numeral);
   font-size: 1.3rem;
   font-weight: 700;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mc-room-card,
-  .mc-btn {
-    transition: none;
-  }
 }
 
 .mc-field-label {
@@ -354,4 +362,3 @@
   color: var(--color-danger);
   font-weight: 700;
 }
-

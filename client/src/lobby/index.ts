@@ -6,6 +6,7 @@ import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
 import { requestCaptureFromUpload, requestCaptureFromUrl } from './capture-client';
 import { captureErrorMessage } from './capture-messages';
+import { attachPressFX, paintBurst } from '../fx';
 
 type CaptureUiState =
   | { status: 'idle' }
@@ -15,7 +16,6 @@ type CaptureUiState =
 
 const ROOM_LIST_POLL_MS = 3000;
 const NICKNAME_STORAGE_KEY = 'mc-nickname';
-const PAINT_LETTER_CLASSES = 6;
 
 function isHost(ctx: AppContext): boolean {
   const players = ctx.state.room?.players ?? [];
@@ -62,6 +62,17 @@ function mascotSvg(): string {
 </svg>`;
 }
 
+// White stickman-silhouette mini icon for the in-room player list (design-dna:
+// player counter). Decorative only — host status is conveyed via the chip's
+// aria-label, not this glyph.
+function playerSvg(): string {
+  return `
+<svg width="14" height="18" viewBox="0 0 14 18" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="7" cy="4" r="3.6" fill="oklch(99% 0.004 90)"/>
+  <path d="M7 8.8c-4.2 0-6.6 2.7-6.6 6.6v1.6h13.2v-1.6c0-3.9-2.4-6.6-6.6-6.6z" fill="oklch(99% 0.004 90)"/>
+</svg>`;
+}
+
 const BUNTING_PAINTS = [
   'var(--color-paint-red)',
   'var(--color-paint-orange)',
@@ -84,6 +95,13 @@ export function createLobbyController(): PhaseController {
       let joinError: string | null = null;
       let createError: string | null = null;
       let pollTimer: number | null = null;
+      let titleAnimated = false;
+      let pressFxDetachers: Array<() => void> = [];
+
+      function withPressFX<T extends HTMLElement>(el: T): T {
+        pressFxDetachers.push(attachPressFX(el));
+        return el;
+      }
 
       function nickname(): string {
         return (root.querySelector<HTMLInputElement>('input[aria-label="닉네임"]')?.value ?? '').trim();
@@ -106,6 +124,9 @@ export function createLobbyController(): PhaseController {
       }
 
       function render(): void {
+        // Detach the outgoing screen's press-FX listeners before it's discarded.
+        pressFxDetachers.forEach((detach) => detach());
+        pressFxDetachers = [];
         // Preserve in-progress inputs across re-renders.
         const keep = new Map<string, string>();
         for (const input of root.querySelectorAll<HTMLInputElement>('input[aria-label]')) {
@@ -137,11 +158,15 @@ export function createLobbyController(): PhaseController {
 
         const titleRow = document.createElement('div');
         titleRow.className = 'mc-title';
+        if (!titleAnimated) {
+          titleRow.classList.add('mc-title-enter');
+          titleAnimated = true;
+        }
         const h1 = document.createElement('h1');
+        h1.className = 'mc-title-paint';
         const titleText = '메차멜레온';
-        [...titleText].forEach((ch, i) => {
+        [...titleText].forEach((ch) => {
           const span = document.createElement('span');
-          span.className = `mc-letter-${(i % PAINT_LETTER_CLASSES) + 1}`;
           span.textContent = ch;
           h1.appendChild(span);
         });
@@ -257,11 +282,12 @@ export function createLobbyController(): PhaseController {
         pwInput.setAttribute('aria-label', '방 비밀번호');
         const joinBtn = document.createElement('button');
         joinBtn.type = 'button';
-        joinBtn.className = 'mc-btn mc-btn--quiet';
+        joinBtn.className = 'mc-btn mc-btn--ghost';
         joinBtn.textContent = '입장';
         joinBtn.addEventListener('click', () => {
           void handleJoin(code, pwInput.value);
         });
+        withPressFX(joinBtn);
         pwInput.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') void handleJoin(code, pwInput.value);
         });
@@ -317,12 +343,13 @@ export function createLobbyController(): PhaseController {
 
         const createBtn = document.createElement('button');
         createBtn.type = 'button';
-        createBtn.className = 'mc-btn';
+        createBtn.className = 'mc-btn mc-btn--green mc-form-submit';
         createBtn.textContent = creating ? '만드는 중…' : '만들기';
         createBtn.disabled = creating;
         createBtn.addEventListener('click', () => {
           void handleCreate();
         });
+        withPressFX(createBtn);
         form.appendChild(createBtn);
 
         if (createError) {
@@ -421,7 +448,12 @@ export function createLobbyController(): PhaseController {
         const list = document.createElement('ul');
         for (const p of room.players) {
           const li = document.createElement('li');
-          li.textContent = p.isHost ? `${p.nickname} (host)` : p.nickname;
+          li.className = p.isHost ? 'mc-player-chip mc-player-chip--host' : 'mc-player-chip';
+          li.setAttribute('aria-label', p.isHost ? `${p.nickname} (호스트)` : p.nickname);
+          li.innerHTML = playerSvg();
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = p.nickname;
+          li.appendChild(nameSpan);
           list.appendChild(li);
         }
         wrap.appendChild(list);
@@ -433,13 +465,17 @@ export function createLobbyController(): PhaseController {
 
         const startBtn = document.createElement('button');
         startBtn.type = 'button';
-        startBtn.className = 'mc-btn';
+        startBtn.className = 'mc-btn mc-btn--green';
         startBtn.textContent = '시작';
         const canStart = host && room.players.length >= MIN_PLAYERS && room.background !== null;
         startBtn.disabled = !canStart;
-        startBtn.addEventListener('click', () => {
-          void startGame(ctx);
+        startBtn.addEventListener('click', (event) => {
+          const { clientX, clientY } = event;
+          void startGame(ctx).then((res) => {
+            if (res.ok) paintBurst(clientX, clientY);
+          });
         });
+        withPressFX(startBtn);
         wrap.appendChild(startBtn);
 
         // The start conditions were invisible — a full room with no background
@@ -487,12 +523,13 @@ export function createLobbyController(): PhaseController {
 
         const captureBtn = document.createElement('button');
         captureBtn.type = 'button';
-        captureBtn.className = 'mc-btn mc-btn--quiet';
+        captureBtn.className = 'mc-btn mc-btn--ghost';
         captureBtn.textContent = captureState.status === 'loading' ? '가져오는 중…' : '가져오기';
         captureBtn.disabled = captureState.status === 'loading';
         captureBtn.addEventListener('click', () => {
           void handleCapture(urlInput.value);
         });
+        withPressFX(captureBtn);
         wrap.append(urlInput, captureBtn);
 
         if (captureState.status === 'success') {
@@ -514,11 +551,12 @@ export function createLobbyController(): PhaseController {
 
           const retryBtn = document.createElement('button');
           retryBtn.type = 'button';
-          retryBtn.className = 'mc-btn mc-btn--quiet';
+          retryBtn.className = 'mc-btn mc-btn--ghost';
           retryBtn.textContent = '다시 시도';
           retryBtn.addEventListener('click', () => {
             void handleCapture(urlInput.value);
           });
+          withPressFX(retryBtn);
           wrap.appendChild(retryBtn);
 
           const uploadLabel = document.createElement('label');
@@ -589,6 +627,8 @@ export function createLobbyController(): PhaseController {
         mounted = false;
         ctx.socket.off('room:state', onRoomState);
         if (pollTimer !== null) window.clearInterval(pollTimer);
+        pressFxDetachers.forEach((detach) => detach());
+        pressFxDetachers = [];
       };
 
       render();
