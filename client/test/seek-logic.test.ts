@@ -6,26 +6,15 @@ import {
   RESULT_PULSE_BASE_RADIUS,
   resolveResultText,
   resultPulseRadius,
+  seekBodyStyle,
 } from '../src/seek/logic';
 import type { SeekEndPayload } from '../src/seek/logic';
-import type { RoomStatePublic } from 'shared/protocol';
+import type { StickmanState } from 'shared/protocol';
 
-const STICKMAN = {
-  x: 100,
-  y: 100,
-  scale: 1,
-  colors: {
-    head: '#000000',
-    torso: '#000000',
-    leftArm: '#000000',
-    rightArm: '#000000',
-    leftLeg: '#000000',
-    rightLeg: '#000000',
-  },
-};
+const STICKMAN: StickmanState = { x: 100, y: 100, scale: 1, strokes: [] };
 
-function makeRoom(players: RoomStatePublic['players']): RoomStatePublic {
-  return { code: 'ABCDEF', phase: 'seek', players, background: null, endsAt: null };
+function makeStickman(playerId: string, found: boolean) {
+  return { playerId, nickname: `p-${playerId}`, stickman: STICKMAN, found };
 }
 
 describe('canClick (D3): local lockout gate mirrors server Date.now() < lockedUntil', () => {
@@ -79,37 +68,48 @@ describe('applySeekClickAck (D3): ack -> next lockedUntil', () => {
   });
 });
 
-describe('resolveResultText (D8): winner/reason -> displayed text', () => {
-  it('names the finder by nickname when winner=seekers, reason=found, foundBy resolves (normal)', () => {
-    const end: SeekEndPayload = { winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' };
-    const room = makeRoom([
-      { id: 'p1', nickname: '숨은이', isHost: true },
-      { id: 'p2', nickname: '찾은이', isHost: false },
-    ]);
-    expect(resolveResultText(end, room)).toBe('찾은이님이 찾았다!');
+describe('resolveResultText (D5/D8): winner -> displayed text', () => {
+  it('reads as a clean sweep when the seekers win, regardless of who found whom (normal)', () => {
+    const end: SeekEndPayload = {
+      winner: 'seekers',
+      stickmen: [makeStickman('h1', true), makeStickman('h2', true)],
+      reason: 'all_found',
+    };
+    expect(resolveResultText(end)).toBe('다 찾았다!');
   });
 
   it('falls back to "게임 종료" when the end payload has not arrived yet (error/defensive)', () => {
-    expect(resolveResultText(null, makeRoom([]))).toBe('게임 종료');
+    expect(resolveResultText(null)).toBe('게임 종료');
   });
 
-  it('falls back to a nameless finder text when foundBy does not resolve to a known player (error/defensive)', () => {
-    const end: SeekEndPayload = { winner: 'seekers', foundBy: 'ghost', stickman: STICKMAN, reason: 'found' };
-    expect(resolveResultText(end, makeRoom([{ id: 'p1', nickname: '숨은이', isHost: true }]))).toBe('찾았다!');
+  it('counts only the unfound hiders when the hider side wins a timeout (normal: found/unfound mixed)', () => {
+    const end: SeekEndPayload = {
+      winner: 'hider',
+      stickmen: [makeStickman('h1', true), makeStickman('h2', false), makeStickman('h3', false)],
+      reason: 'timeout',
+    };
+    expect(resolveResultText(end)).toBe('2명이 끝까지 숨었다!');
   });
 
-  it('shows the timeout text when the hider wins by running out the clock (boundary: hider+timeout)', () => {
-    const end: SeekEndPayload = { winner: 'hider', stickman: STICKMAN, reason: 'timeout' };
-    expect(resolveResultText(end, makeRoom([]))).toBe('끝까지 못 찾았다…');
+  it('counts zero survivors for an empty stickmen list (boundary: empty array defense)', () => {
+    const end: SeekEndPayload = { winner: 'hider', stickmen: [], reason: 'timeout' };
+    expect(resolveResultText(end)).toBe('0명이 끝까지 숨었다!');
+  });
+});
+
+describe('seekBodyStyle (D3): per-hider render mode in the seek overlay', () => {
+  it('stays camouflaged (\'seek\') for a hider not yet in the found set (normal)', () => {
+    expect(seekBodyStyle('h1', new Set())).toBe('seek');
   });
 
-  it('shows the generic hider-win text for a non-timeout hider win (boundary: hider, non-timeout)', () => {
-    const end: SeekEndPayload = { winner: 'hider', stickman: STICKMAN, reason: 'found' };
-    expect(resolveResultText(end, makeRoom([]))).toBe('숨은 사람 승리');
+  it('switches to the default outlined style (undefined) once found (normal)', () => {
+    expect(seekBodyStyle('h1', new Set(['h1']))).toBeUndefined();
   });
 
-  it('falls back to "게임 종료" when no game:end payload exists (boundary: null end)', () => {
-    expect(resolveResultText(null, makeRoom([]))).toBe('게임 종료');
+  it('only reveals the matching id, leaving other hiders camouflaged (boundary: mixed found set)', () => {
+    const foundIds = new Set(['h2']);
+    expect(seekBodyStyle('h1', foundIds)).toBe('seek');
+    expect(seekBodyStyle('h2', foundIds)).toBeUndefined();
   });
 });
 

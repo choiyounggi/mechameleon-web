@@ -1,12 +1,11 @@
-import { LOCKOUT_MS, type RoomStatePublic, type SeekClickAck, type StickmanState, type Winner } from 'shared/protocol';
+import { LOCKOUT_MS, type SeekClickAck, type StickmanState, type Winner } from 'shared/protocol';
 
 // Shape of the 'game:end' server payload (shared/protocol.ts ServerToClientEvents),
 // named locally since the protocol only inlines it on the event map (D8).
 export interface SeekEndPayload {
   winner: Winner;
-  foundBy?: string;
-  stickman: StickmanState | null;
-  reason: 'found' | 'timeout';
+  stickmen: Array<{ playerId: string; nickname: string; stickman: StickmanState; found: boolean }>;
+  reason: 'all_found' | 'timeout';
 }
 
 // D3: mirrors the server's `Date.now() < lockedUntil` reject gate exactly, so
@@ -36,14 +35,23 @@ export function applySeekClickAck(ack: SeekClickAck, now: number, lockedUntil: n
   return lockedUntil;
 }
 
-// D8: winner/reason -> displayed result text.
-export function resolveResultText(end: SeekEndPayload | null, room: RoomStatePublic | null): string {
+// D5/D8: winner -> displayed result text. Seekers always read as a clean
+// sweep ('다 찾았다!' whether by all_found or timeout with 0 survivors); a
+// hider win names how many stayed hidden, counted from the final stickmen
+// list rather than trusted as a separate field.
+export function resolveResultText(end: SeekEndPayload | null): string {
   if (end === null) return '게임 종료';
-  if (end.winner === 'hider') {
-    return end.reason === 'timeout' ? '끝까지 못 찾았다…' : '숨은 사람 승리';
-  }
-  const finder = room?.players.find((p) => p.id === end.foundBy);
-  return finder ? `${finder.nickname}님이 찾았다!` : '찾았다!';
+  if (end.winner === 'seekers') return '다 찾았다!';
+  const unfound = end.stickmen.filter((s) => !s.found).length;
+  return `${unfound}명이 끝까지 숨었다!`;
+}
+
+// D3: which body style reveals a hider's stickman in the seek overlay --
+// unfound stays camouflaged ('seek', no outline); found switches to the
+// default outlined style. Extracted as pure logic because jsdom's null 2D
+// context makes the actual draw call unobservable in a mounted-screen test.
+export function seekBodyStyle(playerId: string, foundIds: ReadonlySet<string>): 'seek' | undefined {
+  return foundIds.has(playerId) ? undefined : 'seek';
 }
 
 // D8: result-screen highlight ring radius, a 1.2s-period sinusoidal pulse

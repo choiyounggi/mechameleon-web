@@ -16,6 +16,7 @@ import { createThrottled } from './util/throttle';
 export interface HidePayload {
   background: Background;
   endsAt: number;
+  stickman: StickmanState;
 }
 
 export interface AppState {

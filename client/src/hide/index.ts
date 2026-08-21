@@ -3,7 +3,6 @@ import type { AppContext } from '../net';
 import { createHideUpdateSender, hideConfirm } from '../net';
 import type { PhaseController } from '../phases';
 import { registerPhase } from '../phases';
-import { initialStickman } from 'shared/stickman';
 import { drawStickman } from '../render/stickman-renderer';
 import { attachPressFX, paintBurst } from '../fx';
 import { pickColor } from './eyedropper';
@@ -116,11 +115,12 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     root.appendChild(waiting);
     return;
   }
-  const { background, endsAt } = payload;
+  const { background, endsAt, stickman: startStickman } = payload;
 
-  // Same top-center start pose the server assigns (shared/stickman.ts) — the
-  // page opens scrolled to the top with the stickman in view.
-  let stickman: StickmanState = initialStickman(background.width, background.height);
+  // D1: the server assigns the initial position (horizontally spread across
+  // hiders, shared/stickman.ts) and broadcasts it on phase:hide — the client
+  // starts editing from that position rather than generating its own.
+  let stickman: StickmanState = startStickman;
   let currentColor = DEFAULT_BRUSH_COLOR;
   let activeStroke: StickmanStroke | null = null;
 

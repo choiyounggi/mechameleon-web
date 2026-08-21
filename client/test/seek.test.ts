@@ -88,7 +88,7 @@ describe('initSeek (D1): early listeners resolve the phase:seek-before-room:stat
     // simulate the server event arriving before room:state ever triggers a mount
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt,
     });
 
@@ -112,7 +112,7 @@ describe('seek controller: click handling by role (D3, D6)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -135,7 +135,7 @@ describe('seek controller: click handling by role (D3, D6)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -155,7 +155,7 @@ describe('seek controller: click handling by role (D3, D6)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -189,7 +189,7 @@ describe('seek controller: click handling by role (D3, D6)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -209,7 +209,7 @@ describe('seek controller: click handling by role (D3, D6)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -229,7 +229,7 @@ describe('seek controller: seek:miss ripple wiring (D4)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -249,7 +249,7 @@ describe('seek controller: seek:miss ripple wiring (D4)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -270,7 +270,7 @@ describe('seek controller: seek:miss ripple wiring (D4)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -291,7 +291,7 @@ describe('seek controller: lockout shake (D2)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -314,7 +314,7 @@ describe('seek controller: lockout shake (D2)', () => {
     initSeek(ctx);
     handlers.get('phase:seek')!({
       background: { imageUrl: '/bg.png', width: 800, height: 600 },
-      stickman: STICKMAN,
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
       endsAt: NOW + 60_000,
     });
     const root = document.createElement('div');
@@ -346,5 +346,102 @@ describe('seek controller: lockout shake (D2)', () => {
     expect(lockoutEl.hidden).toBe(true);
 
     getPhase('seek').unmount();
+  });
+});
+
+describe('seek controller: multi-hider rendering (D3, D4)', () => {
+  it('shows the initial remaining-hiders count in the HUD, derived from stickmen.length (normal)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [
+        { playerId: 'h1', nickname: '숨은이1', stickman: STICKMAN, found: false },
+        { playerId: 'h2', nickname: '숨은이2', stickman: STICKMAN, found: false },
+      ],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+
+    getPhase('seek').mount(root, ctx);
+
+    expect(root.querySelector('.mc-seek-remaining')?.textContent).toBe('남은 카멜레온 2');
+
+    getPhase('seek').unmount();
+  });
+
+  it('shows zero remaining hiders without crashing when stickmen is empty (boundary: empty stickmen defense)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+
+    expect(() => getPhase('seek').mount(root, ctx)).not.toThrow();
+    expect(root.querySelector('.mc-seek-remaining')?.textContent).toBe('남은 카멜레온 0');
+
+    getPhase('seek').unmount();
+  });
+
+  it('updates the remaining count from the server payload and bursts paint above the found hider on seek:found (normal: D3/D4)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [
+        { playerId: 'h1', nickname: '숨은이1', stickman: STICKMAN, found: false },
+        { playerId: 'h2', nickname: '숨은이2', stickman: STICKMAN, found: false },
+      ],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+
+    handlers.get('seek:found')!({ playerId: 'h1', nickname: '숨은이1', by: 'me', remaining: 1 });
+
+    expect(root.querySelector('.mc-seek-remaining')?.textContent).toBe('남은 카멜레온 1');
+    // burst centers 60px above the found stickman's (200, 150) position; jsdom
+    // lays the overlay canvas rect at {left:0, top:0} with no page scroll.
+    expect(paintBurst).toHaveBeenCalledWith(200, 90, { count: 12 });
+
+    getPhase('seek').unmount();
+  });
+
+  it('shows zero remaining once the last hider is found (boundary: remaining=0)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [{ playerId: 'h1', nickname: '숨은이1', stickman: STICKMAN, found: false }],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+
+    handlers.get('seek:found')!({ playerId: 'h1', nickname: '숨은이1', by: 'me', remaining: 0 });
+
+    expect(root.querySelector('.mc-seek-remaining')?.textContent).toBe('남은 카멜레온 0');
+
+    getPhase('seek').unmount();
+  });
+
+  it('unsubscribes seek:found on unmount so no stale listener remains registered (boundary: cleanup)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [{ playerId: 'h1', nickname: '숨은이', stickman: STICKMAN, found: false }],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+    const onSeekFound = handlers.get('seek:found');
+
+    getPhase('seek').unmount();
+
+    expect(ctx.socket.off).toHaveBeenCalledWith('seek:found', onSeekFound);
   });
 });

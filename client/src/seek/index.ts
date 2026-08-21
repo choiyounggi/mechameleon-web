@@ -1,4 +1,4 @@
-import type { Background, StickmanState } from 'shared/protocol';
+import type { Background, SeekStickman } from 'shared/protocol';
 import type { AppContext } from '../net';
 import { seekClick } from '../net';
 import type { PhaseController } from '../phases';
@@ -6,7 +6,7 @@ import { registerPhase } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { formatRemaining, remainingMs } from '../hide/timer';
 import { paintBurst, screenShake } from '../fx';
-import { applySeekClickAck, canClick, lockoutBadgeText } from './logic';
+import { applySeekClickAck, canClick, lockoutBadgeText, seekBodyStyle } from './logic';
 import type { SeekEndPayload } from './logic';
 import { createRippleStore, drawRipples } from './ripple';
 import type { ActiveRipple } from './ripple';
@@ -15,7 +15,7 @@ import { resultController } from './result';
 // Shape of the 'phase:seek' server payload (shared/protocol.ts ServerToClientEvents).
 export interface SeekStartPayload {
   background: Background;
-  stickman: StickmanState;
+  stickmen: SeekStickman[];
   endsAt: number;
 }
 
@@ -72,8 +72,9 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     root.appendChild(waiting);
     return;
   }
-  const { background, stickman, endsAt } = payload;
+  const { background, stickmen, endsAt } = payload;
   const isSeeker = ctx.state.role !== 'hider';
+  const foundIds = new Set<string>();
 
   // D1: top-center HUD -- hourglass + mm:ss timer + phase label (spectator branch).
   const hud = document.createElement('div');
@@ -83,7 +84,11 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const hudLabel = document.createElement('span');
   hudLabel.className = 'mc-hud-label';
   hudLabel.textContent = isSeeker ? '찾아라!' : '관전 중';
-  hud.append(createHourglassIcon(), timerEl, hudLabel);
+  // D4: remaining-hiders readout, updated from seek:found's server-truth count.
+  const remainingHidersEl = document.createElement('span');
+  remainingHidersEl.className = 'mc-hud-label mc-seek-remaining';
+  remainingHidersEl.textContent = `남은 카멜레온 ${stickmen.length}`;
+  hud.append(createHourglassIcon(), timerEl, hudLabel, remainingHidersEl);
   root.appendChild(hud);
 
   // D1: bottom-right oversized remaining-seconds readout (.mc-hud-num contract).
@@ -136,8 +141,11 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   function redrawOverlay(ripples: ActiveRipple[]): void {
     if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    // 'seek' style: no ink outline — the camouflage has to actually work.
-    drawStickman(overlayCtx, stickman, 'seek');
+    // D3: unfound hiders stay in 'seek' style (no ink outline, camouflage
+    // intact); a found hider is redrawn in the default outlined style.
+    for (const s of stickmen) {
+      drawStickman(overlayCtx, s.stickman, seekBodyStyle(s.playerId, foundIds));
+    }
     drawRipples(overlayCtx, ripples);
   }
   redrawOverlay([]);
@@ -165,6 +173,23 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     triggerMissBurst(x, y);
   }
   ctx.socket.on('seek:miss', onSeekMiss);
+
+  // D3: burst just above the revealed stickman's head, in screen coords --
+  // same canvas-rect transform as triggerMissBurst, no bounds check needed
+  // since a hider's position is always within the canvas.
+  function triggerFoundBurst(x: number, y: number): void {
+    const rect = overlayCanvas.getBoundingClientRect();
+    paintBurst(rect.left + x + window.scrollX, rect.top + (y - 60) + window.scrollY, { count: 12 });
+  }
+  function onSeekFound(payload: unknown): void {
+    const { playerId, remaining } = payload as { playerId: string; nickname: string; by: string; remaining: number };
+    foundIds.add(playerId);
+    const found = stickmen.find((s) => s.playerId === playerId);
+    if (found) triggerFoundBurst(found.stickman.x, found.stickman.y);
+    redrawOverlay(rippleStore.active(Date.now()));
+    remainingHidersEl.textContent = `남은 카멜레온 ${remaining}`;
+  }
+  ctx.socket.on('seek:found', onSeekFound);
 
   // D2/D5: self-lockout chip, shared between a real 3s miss-lock and the brief
   // 1s flash on a raced 'locked' ack (see applySeekClickAck).
@@ -210,6 +235,7 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   cleanupHolder.cleanup = () => {
     if (isSeeker) overlayCanvas.removeEventListener('click', onOverlayClick);
     ctx.socket.off('seek:miss', onSeekMiss);
+    ctx.socket.off('seek:found', onSeekFound);
     window.clearInterval(intervalId);
     if (rafHandle !== null) window.cancelAnimationFrame(rafHandle);
   };

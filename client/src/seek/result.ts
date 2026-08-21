@@ -1,21 +1,27 @@
-import type { Background, StickmanState } from 'shared/protocol';
+import type { Background } from 'shared/protocol';
 import type { AppContext } from '../net';
 import type { PhaseController } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
 import { attachPressFX, paintBurst } from '../fx';
 import { getEndPayload } from './index';
-import { resolveResultText, resultPulseRadius } from './logic';
+import { resolveResultText, resultPulseRadius, RESULT_PULSE_BASE_RADIUS } from './logic';
+import type { SeekEndPayload } from './logic';
 
-// D6: canvas 2D strokeStyle cannot resolve CSS var() -- fixed local constant
-// mirroring --color-paint-red (tokens.css).
+// D6: canvas 2D strokeStyle cannot resolve CSS var() -- fixed local constants
+// mirroring --color-paint-red / --color-paint-green (tokens.css).
 const RING_STROKE = 'oklch(65% 0.21 25 / 0.5)';
+const SURVIVED_RING_STROKE = 'oklch(71% 0.17 145 / 0.5)';
 const RING_LINE_WIDTH = 3;
 
 interface CleanupHolder {
   cleanup: (() => void) | null;
 }
 
-function mountHighlightCanvas(root: HTMLElement, stickman: StickmanState, background: Background): () => void {
+function mountHighlightCanvas(
+  root: HTMLElement,
+  stickmen: SeekEndPayload['stickmen'],
+  background: Background,
+): () => void {
   const canvas = document.createElement('canvas');
   canvas.width = background.width;
   canvas.height = background.height;
@@ -38,13 +44,17 @@ function mountHighlightCanvas(root: HTMLElement, stickman: StickmanState, backgr
     if (canvasCtx) {
       canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
       if (imgLoaded) canvasCtx.drawImage(img, 0, 0);
-      drawStickman(canvasCtx, stickman);
-      const radius = resultPulseRadius(Date.now(), startedAt);
-      canvasCtx.beginPath();
-      canvasCtx.strokeStyle = RING_STROKE;
-      canvasCtx.lineWidth = RING_LINE_WIDTH;
-      canvasCtx.arc(stickman.x, stickman.y, radius, 0, Math.PI * 2);
-      canvasCtx.stroke();
+      // D6: found -> the existing red pulsing ring; survived -> a fixed green
+      // ring at the same base radius, so a timeout win reads as "safe", not alarmed.
+      const pulseRadius = resultPulseRadius(Date.now(), startedAt);
+      for (const s of stickmen) {
+        drawStickman(canvasCtx, s.stickman);
+        canvasCtx.beginPath();
+        canvasCtx.strokeStyle = s.found ? RING_STROKE : SURVIVED_RING_STROKE;
+        canvasCtx.lineWidth = RING_LINE_WIDTH;
+        canvasCtx.arc(s.stickman.x, s.stickman.y, s.found ? pulseRadius : RESULT_PULSE_BASE_RADIUS, 0, Math.PI * 2);
+        canvasCtx.stroke();
+      }
     }
     rafHandle = window.requestAnimationFrame(frame);
   }
@@ -57,11 +67,12 @@ function mountHighlightCanvas(root: HTMLElement, stickman: StickmanState, backgr
 
 function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: CleanupHolder): void {
   const end = getEndPayload();
-  const text = resolveResultText(end, ctx.state.room);
-  // D5: reason 'found' -> seeker won (danger/red), 'timeout' -> hider
-  // survived (go/green). end===null (game:end never arrived) falls back to
-  // the 'found' variant -- that path only shows the defensive '게임 종료' text.
-  const variant = end?.reason === 'timeout' ? 'survived' : 'found';
+  const text = resolveResultText(end);
+  // D6: winner 'hider' -> at least one hider survived (go/green); winner
+  // 'seekers' -> a clean sweep (danger/red). end===null (game:end never
+  // arrived) falls back to the 'found' variant -- that path only shows the
+  // defensive '게임 종료' text.
+  const variant = end?.winner === 'hider' ? 'survived' : 'found';
 
   const detachers: (() => void)[] = [];
 
@@ -93,11 +104,11 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
 
   let canvasCleanup: (() => void) | null = null;
   const background = ctx.state.room?.background ?? null;
-  if (end?.stickman && background) {
+  if (end?.stickmen.length && background) {
     const stage = document.createElement('div');
     stage.className = 'mc-result-stage';
     root.appendChild(stage);
-    canvasCleanup = mountHighlightCanvas(stage, end.stickman, background);
+    canvasCleanup = mountHighlightCanvas(stage, end.stickmen, background);
   }
 
   // Everyone sees the same countdown to the server-driven auto-return -- the

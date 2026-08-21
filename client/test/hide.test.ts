@@ -117,6 +117,7 @@ describe('hide overlay click-through (regression: overlay swallowed eyedropper c
         hidePayload: {
           background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
           endsAt: Date.now() + 60000,
+          stickman: { x: 720, y: 100, scale: 1, strokes: [] },
         },
       },
     } as never;
@@ -125,6 +126,46 @@ describe('hide overlay click-through (regression: overlay swallowed eyedropper c
     expect(canvases).toHaveLength(2);
     // canvases[1] is the absolutely-positioned stickman overlay on top
     expect(canvases[1].style.pointerEvents).toBe('none');
+    ctrl.unmount();
+  });
+});
+
+describe('hide initial position (D1): starts from the server-assigned phase:hide payload.stickman', () => {
+  it('moves from the payload position, not a locally generated pose, on the first edit (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const { ARROW_STEP } = await import('../src/hide/movement');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const emit = vi.fn();
+    const ctx = {
+      socket: { emit, on: () => {}, off: () => {} },
+      state: {
+        playerId: 'p1',
+        role: 'hider',
+        room: null,
+        hidePayload: {
+          background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
+          endsAt: Date.now() + 60000,
+          stickman: { x: 555, y: 42, scale: 1.3, strokes: [] },
+        },
+      },
+    } as never;
+
+    // jsdom has no layout engine, so container.clientWidth/Height are always 0
+    // and followScroll's out-of-view check always trips; jsdom also doesn't
+    // implement Element.scrollTo at all, so it must be stubbed here.
+    window.HTMLElement.prototype.scrollTo = vi.fn();
+
+    ctrl.mount(root, ctx);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+
+    // ArrowRight moves x by ARROW_STEP from whatever position editing started
+    // at -- landing at payload.stickman.x + ARROW_STEP proves the start was
+    // the server-assigned position, not a fresh initialStickman() pose.
+    expect(emit).toHaveBeenCalledWith('hide:update', {
+      stickman: { x: 555 + ARROW_STEP, y: 42, scale: 1.3, strokes: [] },
+    });
+
     ctrl.unmount();
   });
 });
@@ -172,6 +213,7 @@ function mountEditCtx(endsAt: number) {
       hidePayload: {
         background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
         endsAt,
+        stickman: { x: 720, y: 100, scale: 1, strokes: [] },
       },
     },
   } as never;

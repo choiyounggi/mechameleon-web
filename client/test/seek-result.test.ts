@@ -19,15 +19,17 @@ const STICKMAN = {
   x: 200,
   y: 150,
   scale: 1,
-  colors: {
-    head: '#111111',
-    torso: '#222222',
-    leftArm: '#333333',
-    rightArm: '#444444',
-    leftLeg: '#555555',
-    rightLeg: '#666666',
-  },
+  strokes: [],
 };
+
+function makeStickmen(overrides: Array<{ playerId: string; found: boolean }>) {
+  return overrides.map(({ playerId, found }) => ({
+    playerId,
+    nickname: `p-${playerId}`,
+    stickman: STICKMAN,
+    found,
+  }));
+}
 
 function makeMockSocket() {
   const handlers = new Map<string, (payload: unknown) => void>();
@@ -83,7 +85,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('result controller (D8): game:end -> rendered outcome', () => {
+describe('result controller (D5/D6/D8): game:end -> rendered outcome', () => {
   it('registers the result phase controller (normal)', () => {
     const fallback = getPhase('lobby');
     const { ctx } = makeCtx(makeRoom());
@@ -93,15 +95,22 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     expect(getPhase('result')).not.toBe(fallback);
   });
 
-  it('names the finder and draws a highlight canvas when winner=seekers/found and stickman is known (normal)', () => {
+  it('shows the clean-sweep text and draws a highlight canvas for every stickman when the seekers win (normal: multi-hider)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' });
+    handlers.get('game:end')!({
+      winner: 'seekers',
+      stickmen: makeStickmen([
+        { playerId: 'h1', found: true },
+        { playerId: 'h2', found: true },
+      ]),
+      reason: 'all_found',
+    });
     const root = document.createElement('div');
 
     getPhase('result').mount(root, ctx);
 
-    expect(normalizeNbsp(root.textContent)).toContain('찾은이님이 찾았다!');
+    expect(normalizeNbsp(root.textContent)).toContain('다 찾았다!');
     const canvas = root.querySelector('canvas');
     expect(canvas).not.toBeNull();
     expect(canvas!.width).toBe(800);
@@ -109,16 +118,39 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     getPhase('result').unmount();
   });
 
-  it('shows the timeout text and draws no highlight canvas when stickman is null (boundary: no stickman)', () => {
+  it('shows the survivor count text and draws no highlight canvas when stickmen is empty (boundary: empty stickmen)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const root = document.createElement('div');
 
     getPhase('result').mount(root, ctx);
 
-    expect(normalizeNbsp(root.textContent)).toContain('끝까지 못 찾았다…');
+    expect(normalizeNbsp(root.textContent)).toContain('0명이 끝까지 숨었다!');
     expect(root.querySelector('canvas')).toBeNull();
+
+    getPhase('result').unmount();
+  });
+
+  it('counts only the unfound hiders in the survivor text when found/unfound are mixed (normal: D5 mixed count)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({
+      winner: 'hider',
+      stickmen: makeStickmen([
+        { playerId: 'h1', found: true },
+        { playerId: 'h2', found: false },
+        { playerId: 'h3', found: false },
+      ]),
+      reason: 'timeout',
+    });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    expect(normalizeNbsp(root.textContent)).toContain('2명이 끝까지 숨었다!');
+    const canvas = root.querySelector('canvas');
+    expect(canvas).not.toBeNull();
 
     getPhase('result').unmount();
   });
@@ -126,7 +158,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('shows the return message and initial countdown to everyone, with no restart buttons or waiting message (normal: countdown replaces host branch)', () => {
     const { ctx: hostCtx, handlers: hostHandlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 }), 'p1'); // host
     initSeek(hostCtx);
-    hostHandlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    hostHandlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const hostRoot = document.createElement('div');
     getPhase('result').mount(hostRoot, hostCtx);
 
@@ -139,7 +171,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
 
     const { ctx: guestCtx, handlers: guestHandlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 })); // p2, not host
     initSeek(guestCtx);
-    guestHandlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    guestHandlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const guestRoot = document.createElement('div');
     getPhase('result').mount(guestRoot, guestCtx);
 
@@ -153,7 +185,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('counts down by one second per elapsed second, ticking on the 500ms interval (normal: tick decrease)', () => {
     const { ctx, handlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 }));
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
     const countEl = root.querySelector('.mc-result-return-count')!;
@@ -171,7 +203,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('holds the countdown at 0 once endsAt has passed, never going negative (boundary: countdown floor)', () => {
     const { ctx, handlers } = makeCtx(makeRoom({ endsAt: NOW - 5_000 })); // already expired
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
 
@@ -186,7 +218,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('shows only the return message, with an empty countdown, when the room has no endsAt (boundary: no endsAt)', () => {
     const { ctx, handlers } = makeCtx(makeRoom({ endsAt: null }));
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
 
@@ -202,7 +234,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('stops the countdown interval on unmount, leaving the DOM unchanged by later ticks (boundary: cleanup, no leaked interval)', () => {
     const { ctx, handlers } = makeCtx(makeRoom({ endsAt: NOW + 10_000 }));
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
     const countEl = root.querySelector('.mc-result-return-count')!;
@@ -238,7 +270,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('"나가기" reloads the page, which disconnects and leaves the room (normal: leave wiring)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
     const reloadSpy = vi.fn();
@@ -259,7 +291,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('unmount stops the highlight ring animation loop (boundary: cleanup, no leaked rAF)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' });
+    handlers.get('game:end')!({ winner: 'seekers', stickmen: makeStickmen([{ playerId: 'h1', found: true }]), reason: 'all_found' });
     const root = document.createElement('div');
     getPhase('result').mount(root, ctx);
     const cafSpy = vi.spyOn(window, 'cancelAnimationFrame');
@@ -273,23 +305,23 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
   it('renders the word gap in the banner as a non-breaking space so it survives inline-block collapse (normal: r1/F2)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' });
+    handlers.get('game:end')!({ winner: 'seekers', stickmen: makeStickmen([{ playerId: 'h1', found: true }]), reason: 'all_found' });
     const root = document.createElement('div');
 
     getPhase('result').mount(root, ctx);
 
-    // '찾은이님이 찾았다!' has its one space at index 5 (0-based).
+    // '다 찾았다!' has its one space at index 1 (0-based).
     const letterSpans = root.querySelectorAll('.mc-title-paint span');
-    expect(letterSpans[5]!.textContent).toBe(' ');
-    expect(letterSpans[5]!.textContent).not.toBe(' ');
+    expect(letterSpans[1]!.textContent).toBe(' ');
+    expect(letterSpans[1]!.textContent).not.toBe(' ');
 
     getPhase('result').unmount();
   });
 
-  it('shows the found (red) banner variant when the seeker wins (normal: D5 banner variant)', () => {
+  it('shows the found (red) banner variant when the seekers win (normal: D6 banner variant)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' });
+    handlers.get('game:end')!({ winner: 'seekers', stickmen: makeStickmen([{ playerId: 'h1', found: true }]), reason: 'all_found' });
     const root = document.createElement('div');
 
     getPhase('result').mount(root, ctx);
@@ -300,10 +332,14 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
     getPhase('result').unmount();
   });
 
-  it('shows the survived (green) banner variant when the hider survives the timeout (boundary: D5 banner variant)', () => {
+  it('shows the survived (green) banner variant when at least one hider survives the timeout (boundary: D6 banner variant)', () => {
     const { ctx, handlers } = makeCtx(makeRoom());
     initSeek(ctx);
-    handlers.get('game:end')!({ winner: 'hider', stickman: null, reason: 'timeout' });
+    handlers.get('game:end')!({
+      winner: 'hider',
+      stickmen: makeStickmen([{ playerId: 'h1', found: false }]),
+      reason: 'timeout',
+    });
     const root = document.createElement('div');
 
     getPhase('result').mount(root, ctx);
