@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ARROW_STEP,
   SCALE_STEP,
@@ -159,5 +159,111 @@ describe('brush paint helpers (paint.ts)', () => {
     const { state, accepted } = finishStroke(full, { ...fat, points: [...fat.points] });
     expect(accepted).toBe(false); // 4000 already used
     expect(state).toBe(full); // untouched on rejection
+  });
+});
+
+function mountEditCtx(endsAt: number) {
+  return {
+    socket: { emit: () => {}, on: () => {}, off: () => {} },
+    state: {
+      playerId: 'p1',
+      role: 'hider',
+      room: null,
+      hidePayload: {
+        background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 },
+        endsAt,
+      },
+    },
+  } as never;
+}
+
+describe('hide HUD: timer urgency toggle (D2, D8)', () => {
+  const NOW = Date.parse('2026-01-01T00:00:00Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not mark is-urgent while remaining is above the 10s threshold (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW + 10_001));
+    expect(root.querySelector('.mc-hud-timer')?.classList.contains('is-urgent')).toBe(false);
+    ctrl.unmount();
+  });
+
+  it('marks is-urgent exactly at the 10000ms remaining boundary (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW + 10_000));
+    expect(root.querySelector('.mc-hud-timer')?.classList.contains('is-urgent')).toBe(true);
+    ctrl.unmount();
+  });
+
+  it('stays is-urgent just under the boundary at 9999ms remaining (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW + 9_999));
+    expect(root.querySelector('.mc-hud-timer')?.classList.contains('is-urgent')).toBe(true);
+    ctrl.unmount();
+  });
+});
+
+describe('hide HUD: keycap control strip (D3, D8)', () => {
+  it('renders each control as an individual .mc-keycap chip, including all 4 arrow keys (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const caps = Array.from(root.querySelectorAll('.mc-keycap')).map((el) => el.textContent);
+    expect(caps).toEqual(['드래그', '⌥', '◀', '▶', '▲', '▼', '+/-']);
+    ctrl.unmount();
+  });
+
+  it('renders the confirm button as a themed keycap button (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const confirmBtn = root.querySelector('button');
+    expect(confirmBtn?.className).toBe('mc-btn mc-btn--green');
+    ctrl.unmount();
+  });
+
+  it('detaches the confirm button press FX on unmount so a later press no longer squashes it (error)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const confirmBtn = root.querySelector('button') as HTMLButtonElement;
+    ctrl.unmount();
+    confirmBtn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(confirmBtn.classList.contains('mc-squash')).toBe(false);
+  });
+});
+
+describe('hide wait screen: themed seeker hold (D6, D8)', () => {
+  it('renders the themed wait screen with no inline gray styling for the seeker role (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const ctx = {
+      socket: { emit: () => {}, on: () => {}, off: () => {} },
+      state: { playerId: 'p1', role: 'seeker', room: { endsAt: Date.now() + 60_000 }, hidePayload: null },
+    } as never;
+    ctrl.mount(root, ctx);
+    const wrap = root.querySelector('.mc-hide-wait') as HTMLElement;
+    expect(wrap).not.toBeNull();
+    expect(wrap.style.background).toBe('');
+    expect(wrap.textContent).toContain('술래는 잠시 대기…');
+    ctrl.unmount();
   });
 });
