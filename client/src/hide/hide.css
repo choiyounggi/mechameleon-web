@@ -1,23 +1,123 @@
-/* Hallmark · screen: hide · migrated verbatim from style.css (t1-foundation T2, D7) — selectors and rules unchanged */
+/* Hallmark · screen: hide · Wave 2 (t3-hide): card-less HUD over the paint canvas —
+ * hourglass timer (urgent state), keycap control strip, paint-drop swatch,
+ * themed seeker wait screen. Consumes t1-foundation's .mc-btn/.mc-keycap/
+ * .mc-hud-num/.mc-hud-label/.mc-error/tokens/fx — defines only hide-scoped classes.
+ */
 
-.mc-hide-toolbar {
+/* ==== edit screen: HUD overlay (D1, D3, D4, D5) ==== */
+
+.mc-hide-hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* top-center: hourglass + countdown + phase label (D1) */
+.mc-hud-timer {
+  position: absolute;
+  top: var(--space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-go);
+  text-align: center;
+}
+
+/* D2: remaining <= 10s — number turns red, hourglass follows via currentColor */
+.mc-hud-timer.is-urgent {
+  color: var(--color-danger);
+}
+
+.mc-hud-timer.is-urgent .mc-hud-num--sm {
+  color: var(--color-danger);
+}
+
+/* reduced clamp variant of the shared .mc-hud-num digits (D1) */
+.mc-hud-num--sm {
+  font-size: clamp(28px, 5vw, 48px);
+}
+
+/* bottom-center: control keycap strip (D3) */
+.mc-hide-keys {
+  position: absolute;
+  bottom: var(--space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-md);
+  max-width: min(92vw, 640px);
+}
+
+.mc-hide-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.mc-hide-key__caps {
+  display: flex;
+  gap: 4px;
+}
+
+.mc-hide-key__label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-soft);
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
+}
+
+/* top-right: paint swatch + confirm button + error (D4, D5) */
+.mc-hide-actions {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  pointer-events: auto;
+}
+
+.mc-hide-actions__row {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--color-card);
-  border-bottom: 1px solid var(--color-line);
-  font-size: 13px;
+  gap: var(--space-sm);
 }
 
+/* D4: paint-drop swatch — asymmetric radius + ink border + bottom edge shadow */
 .mc-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid var(--color-ink);
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
+  border-radius: 60% 60% 60% 4% / 60% 60% 40% 40%;
+  border: 2px solid var(--color-ink-strong);
+  box-shadow: 0 3px 0 var(--color-ink-strong);
+  transform: rotate(-8deg);
 }
 
-.mc-hide-hint {
-  color: var(--color-ink-soft);
+.mc-hide-actions .mc-error {
+  text-align: right;
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
+}
+
+/* ==== wait screen: themed seeker hold (D6) ==== */
+
+.mc-hide-wait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-sm);
+  text-align: center;
+  animation: mc-pop-in 260ms var(--ease-out);
 }
