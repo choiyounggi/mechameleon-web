@@ -13,10 +13,10 @@ A web-based hide-and-seek game you can sneak in with coworkers during office hou
 ## How it works
 
 - The host enters **any URL**; the server captures a full-page screenshot with Playwright (fixed 1440 px width) and uses it as the arena. Buttons on it don't work — it's just pixels, which doubles as your "I'm totally working" screen. Login-walled pages can be replaced by a **direct image upload**.
-- One player is **randomly chosen as the hider** (60 s): move the stickman with arrow keys, then **drag with the mouse to brush-paint** its white body, picking colors from the background with **Alt(⌥)+click** — the classic eyedropper.
-- Everyone else **seeks** (120 s): scroll freely and click where the stickman is. A miss locks *you* out for 3 s and shows a subtle ripple **on everyone's screen**. First hit wins; if time runs out, the hider wins.
+- **Half the room hides by default** — hiders are drawn randomly (floor(n/2), so with an odd count the seekers outnumber them), and the host can dial the split anywhere from 1 hider to all-but-one with a lobby stepper. Each hider paints their own stickman (60 s) from a spread-out starting spot: move with arrow keys, **drag with the mouse to brush-paint** the white body, picking colors from the background with **Alt(⌥)+click** — the classic eyedropper. Seeking starts the moment every hider locks in (or the timer ends).
+- Everyone else **seeks** (120 s): scroll freely and click where a stickman is. A miss locks *you* out for 3 s and shows a subtle ripple **on everyone's screen**. A hit reveals just that hider and the round keeps going — the seekers win when **every hider is found**; if time runs out, the **surviving hiders win**.
 - The server is the only judge — clicks are validated server-side against the shared stickman geometry.
-- After the result screen, a **10-second countdown** ("대기실로 돌아갑니다") returns everyone to the room lobby automatically — with the **previous map still selected**, so the host can start a rematch instantly or capture a fresh URL.
+- After the result screen, a **10-second countdown** ("대기실로 돌아갑니다") returns everyone to the room lobby automatically — with the **previous map and hider-count setting still in place**, so the host can start a rematch instantly or capture a fresh URL.
 
 ## Quick start
 
@@ -34,7 +34,7 @@ Then share `http://<your-ip>:3000` with coworkers on the same network. Two playe
 ## Playing
 
 1. **Lobby** — enter a nickname, then create a room (public, or **private with a password**) or click one in the live room list.
-2. The host fetches a background URL (or uploads an image) and presses start once 2+ players are in.
+2. The host fetches a background URL (or uploads an image), optionally adjusts the hider count ("숨는 사람 N명" stepper, default half the room), and presses start once 2+ players are in.
 3. Hide / seek / result — see the controls below. While the hider paints, seekers watch a themed hold screen (spinner + rotating hints) instead of a blank wait.
 4. After each round the whole room auto-returns to the lobby (10 s countdown) with the map preserved — restart right away or swap the map.
 
@@ -46,7 +46,7 @@ Then share `http://<your-ip>:3000` with coworkers on the same network. Two playe
 | Eyedropper | **Alt (⌥ Option on Mac) + click** a background pixel |
 | Move | Arrow keys (Shift = faster) |
 | Resize | `+` / `-` (0.5×–2×) |
-| Lock in | **확정** button (or wait for the timer) |
+| Lock in | **확정** button — seeking starts once every hider has locked in (or the timer expires) |
 
 ### Controls (seeker)
 
