@@ -145,6 +145,97 @@ describe('lobby capture flow', () => {
   });
 });
 
+describe('lobby capture section — preserved background (idle fallback)', () => {
+  const preserved = { imageUrl: '/api/screenshots/preserved.png', width: 1440, height: 900 };
+
+  it('shows the preserved background as a preview when captureState is idle and room.background is set (normal)', () => {
+    const ctx = makeHostCtx(makeRoom({ background: preserved }));
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const preview = root.querySelector<HTMLImageElement>('img[alt="배경 미리보기"]');
+    expect(preview).not.toBeNull();
+    expect(preview!.getAttribute('src')).toBe(preserved.imageUrl);
+    expect(root.textContent).toContain('1440×900');
+
+    controller.unmount();
+  });
+
+  it('shows no preview when room.background is null (boundary)', () => {
+    const ctx = makeHostCtx(makeRoom({ background: null }));
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelector('img[alt="배경 미리보기"]')).toBeNull();
+
+    controller.unmount();
+  });
+
+  it('suppresses the preserved preview while a new capture is loading, to avoid showing a stale map (boundary)', async () => {
+    let resolveFetch!: (res: Response) => void;
+    const fetchMock = vi.fn().mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const ctx = makeHostCtx(makeRoom({ background: preserved }));
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+    controller.mount(root, ctx);
+
+    expect(root.querySelector('img[alt="배경 미리보기"]')).not.toBeNull();
+
+    const captureBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '가져오기')!;
+    captureBtn.click();
+
+    expect(root.querySelector('img[alt="배경 미리보기"]')).toBeNull();
+
+    resolveFetch(jsonResponse(200, { imageUrl: '/x.png', width: 10, height: 10 }));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    controller.unmount();
+    vi.unstubAllGlobals();
+  });
+
+  it('replaces the preserved-background preview with the newly captured one on success (regression)', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, { imageUrl: '/api/screenshots/new.png', width: 800, height: 600 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const ctx = makeHostCtx(makeRoom({ background: preserved }));
+    (ctx.socket.emit as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, req: unknown, ack?: (res: unknown) => void) => {
+        if (event === 'room:setBackground' && typeof ack === 'function') ack({ ok: true });
+      },
+    );
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+    controller.mount(root, ctx);
+
+    const captureBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '가져오기')!;
+    captureBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const preview = root.querySelector<HTMLImageElement>('img[alt="배경 미리보기"]');
+    expect(preview).not.toBeNull();
+    expect(preview!.getAttribute('src')).toBe('/api/screenshots/new.png');
+    expect(root.textContent).toContain('800×600');
+    expect(root.textContent).not.toContain('1440×900');
+
+    controller.unmount();
+    vi.unstubAllGlobals();
+  });
+});
+
 function makeCtxAs(playerId: string, room: RoomStatePublic): AppContext {
   return {
     socket: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } as unknown as AppContext['socket'],

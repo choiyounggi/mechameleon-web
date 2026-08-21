@@ -1,4 +1,4 @@
-import type { Background, ErrorCode, RoomSummary } from 'shared/protocol';
+import type { Background, ErrorCode, RoomStatePublic, RoomSummary } from 'shared/protocol';
 import { MIN_PLAYERS } from 'shared/protocol';
 import type { AppContext } from '../net';
 import { createRoom, joinRoom, listRooms, setBackground, startGame } from '../net';
@@ -460,7 +460,7 @@ export function createLobbyController(): PhaseController {
 
         const host = isHost(ctx);
         if (host) {
-          wrap.appendChild(renderCaptureSection());
+          wrap.appendChild(renderCaptureSection(room));
         }
 
         const startBtn = document.createElement('button');
@@ -507,7 +507,18 @@ export function createLobbyController(): PhaseController {
         return wrap;
       }
 
-      function renderCaptureSection(): HTMLElement {
+      function appendBackgroundPreview(wrap: HTMLElement, background: Background): void {
+        const preview = document.createElement('img');
+        preview.src = background.imageUrl;
+        preview.alt = '배경 미리보기';
+        preview.style.maxWidth = '100%';
+        preview.style.borderRadius = '10px';
+        const dims = document.createElement('span');
+        dims.textContent = `${background.width}×${background.height}`;
+        wrap.append(preview, dims);
+      }
+
+      function renderCaptureSection(room: RoomStatePublic): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'mc-form';
 
@@ -532,15 +543,14 @@ export function createLobbyController(): PhaseController {
         withPressFX(captureBtn);
         wrap.append(urlInput, captureBtn);
 
-        if (captureState.status === 'success') {
-          const preview = document.createElement('img');
-          preview.src = captureState.background.imageUrl;
-          preview.alt = '배경 미리보기';
-          preview.style.maxWidth = '100%';
-          preview.style.borderRadius = '10px';
-          const dims = document.createElement('span');
-          dims.textContent = `${captureState.background.width}×${captureState.background.height}`;
-          wrap.append(preview, dims);
+        const displayedBackground =
+          captureState.status === 'success'
+            ? captureState.background
+            : captureState.status === 'idle'
+              ? room.background
+              : null;
+        if (displayedBackground) {
+          appendBackgroundPreview(wrap, displayedBackground);
         }
 
         if (captureState.status === 'error') {
