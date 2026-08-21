@@ -85,6 +85,15 @@
   text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
 }
 
+/* D9: current zoom multiplier ("x2.5"), shown only while zoomed in past 1x */
+.mc-hide-key__zoom {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-paint-green);
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
+}
+
 /* top-right: paint swatch + confirm button + error (D4, D5) */
 .mc-hide-actions {
   position: absolute;

@@ -10,6 +10,7 @@ import { pickColor } from './eyedropper';
 import { ARROW_STEP, SCALE_STEP, SHIFT_ARROW_STEP, applyMove, clampScale } from './movement';
 import { DEFAULT_BRUSH_COLOR, EYEDROPPER_KEY, appendPoint, finishStroke, startStroke } from './paint';
 import { formatRemaining, remainingMs } from './timer';
+import { ZOOM_MIN, anchoredScroll, brushSizeForZoom, nextZoom, toImage } from './zoom';
 
 interface CleanupHolder {
   cleanup: (() => void) | null;
@@ -149,11 +150,20 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   // bottom-center: keycap control strip (D3)
   const keys = document.createElement('div');
   keys.className = 'mc-hide-keys';
+  const zoomKeyGroup = buildKeyGroup([{ text: '⌃' }, { text: '휠' }], '확대');
+  // D9: zoom multiplier badge — appended into the zoom key group's label,
+  // shown only above 1x (zoom>1) and updated by applyZoom().
+  const zoomLevelEl = document.createElement('span');
+  zoomLevelEl.className = 'mc-hide-key__zoom';
+  zoomLevelEl.hidden = true;
+  zoomKeyGroup.appendChild(zoomLevelEl);
+
   keys.append(
     buildKeyGroup([{ text: '드래그', variant: 'green' }], '색칠'),
     buildKeyGroup([{ text: '⌥', variant: 'yellow' }], '스포이드'),
     buildKeyGroup([{ text: '◀' }, { text: '▶' }, { text: '▲' }, { text: '▼' }], '이동'),
     buildKeyGroup([{ text: '+/-' }], '크기'),
+    zoomKeyGroup,
   );
 
   // top-right: swatch + confirm + error (D4, D5)
@@ -235,6 +245,43 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
 
   const sender = createHideUpdateSender(ctx);
 
+  // D1: viewport zoom is CSS-only — the canvas backing store (bg/overlay
+  // width/height attrs above) stays at the image's native pixel size, so
+  // redraw() and drawStickman() never need to know about zoom.
+  let zoom = ZOOM_MIN;
+
+  function applyZoom(nextValue: number, cursor: { x: number; y: number }): void {
+    const cssWidth = `${Math.round(background.width * nextValue)}px`;
+    const cssHeight = `${Math.round(background.height * nextValue)}px`;
+    bgCanvas.style.width = cssWidth;
+    bgCanvas.style.height = cssHeight;
+    overlayCanvas.style.width = cssWidth;
+    overlayCanvas.style.height = cssHeight;
+    const rendering = nextValue > ZOOM_MIN ? 'pixelated' : '';
+    bgCanvas.style.imageRendering = rendering;
+    overlayCanvas.style.imageRendering = rendering;
+
+    const nextScrollLeft = anchoredScroll(container.scrollLeft, cursor.x, zoom, nextValue);
+    const nextScrollTop = anchoredScroll(container.scrollTop, cursor.y, zoom, nextValue);
+    zoom = nextValue;
+    container.scrollLeft = nextScrollLeft;
+    container.scrollTop = nextScrollTop;
+
+    zoomLevelEl.hidden = zoom <= ZOOM_MIN;
+    zoomLevelEl.textContent = zoomLevelEl.hidden ? '' : `x${zoom.toFixed(1)}`;
+  }
+
+  // D5: ctrl+wheel zooms (macOS trackpad pinch arrives as a ctrlKey wheel
+  // event, so it's covered for free); a plain wheel is left alone so the
+  // container's native overflow:auto scroll keeps panning.
+  function onWheel(e: WheelEvent): void {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const rect = container.getBoundingClientRect();
+    applyZoom(nextZoom(zoom, e.deltaY), { x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }
+  container.addEventListener('wheel', onWheel, { passive: false });
+
   function redraw(): void {
     if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
@@ -258,19 +305,23 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   }
 
   function followScroll(): void {
+    // D8: stickman.x/y are image-px; the container's scroll/client rect are
+    // screen (CSS) px, so scale by zoom before comparing or targeting.
+    const screenX = stickman.x * zoom;
+    const screenY = stickman.y * zoom;
     const viewLeft = container.scrollLeft;
     const viewTop = container.scrollTop;
     const viewRight = viewLeft + container.clientWidth;
     const viewBottom = viewTop + container.clientHeight;
     const needsScroll =
-      stickman.x < viewLeft + FOLLOW_MARGIN_PX ||
-      stickman.x > viewRight - FOLLOW_MARGIN_PX ||
-      stickman.y < viewTop + FOLLOW_MARGIN_PX ||
-      stickman.y > viewBottom - FOLLOW_MARGIN_PX;
+      screenX < viewLeft + FOLLOW_MARGIN_PX ||
+      screenX > viewRight - FOLLOW_MARGIN_PX ||
+      screenY < viewTop + FOLLOW_MARGIN_PX ||
+      screenY > viewBottom - FOLLOW_MARGIN_PX;
     if (!needsScroll) return;
     container.scrollTo({
-      left: Math.max(0, stickman.x - container.clientWidth / 2),
-      top: Math.max(0, stickman.y - container.clientHeight / 2),
+      left: Math.max(0, screenX - container.clientWidth / 2),
+      top: Math.max(0, screenY - container.clientHeight / 2),
       behavior: 'smooth',
     });
   }
@@ -325,13 +376,17 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   bgCanvas.style.cursor = 'crosshair';
 
   function onPointerDown(e: MouseEvent): void {
+    // D6: bgCanvas's CSS box is scaled by zoom while its backing store stays
+    // at native image size, so offsetX/Y (CSS px) must be converted back.
+    const imageX = toImage(e.offsetX, zoom);
+    const imageY = toImage(e.offsetY, zoom);
     if (e.altKey) {
       // 스포이드: Alt(⌥)를 누른 채 클릭한 지점의 배경색을 붓 색으로
       if (!bgCtx) {
         setError('이미지를 읽을 수 없어요');
         return;
       }
-      const outcome = pickColor(bgCtx, e.offsetX, e.offsetY);
+      const outcome = pickColor(bgCtx, imageX, imageY);
       if (outcome.ok) {
         currentColor = outcome.hex;
         swatch.style.background = currentColor;
@@ -341,12 +396,14 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
       }
       return;
     }
-    activeStroke = startStroke(currentColor, { x: e.offsetX, y: e.offsetY }, stickman);
+    // D7: brush size is fixed at stroke start from the current zoom, so an
+    // in-progress stroke never changes size if the user zooms mid-stroke.
+    activeStroke = startStroke(currentColor, { x: imageX, y: imageY }, stickman, brushSizeForZoom(zoom));
     redraw();
   }
   function onPointerMove(e: MouseEvent): void {
     if (!activeStroke) return;
-    if (appendPoint(activeStroke, stickman, e.offsetX, e.offsetY)) redraw();
+    if (appendPoint(activeStroke, stickman, toImage(e.offsetX, zoom), toImage(e.offsetY, zoom))) redraw();
   }
   function onPointerUp(): void {
     endActiveStroke();
@@ -385,6 +442,7 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     window.removeEventListener('mouseup', onPointerUp);
     bgCanvas.removeEventListener('mousedown', onPointerDown);
     bgCanvas.removeEventListener('mousemove', onPointerMove);
+    container.removeEventListener('wheel', onWheel);
     window.clearInterval(intervalId);
     detachConfirmPressFX();
     detachLeavePressFX();

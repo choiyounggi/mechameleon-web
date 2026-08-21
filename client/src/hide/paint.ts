@@ -24,8 +24,13 @@ export function totalPoints(strokes: StickmanStroke[]): number {
   return strokes.reduce((n, st) => n + st.points.length, 0);
 }
 
-export function startStroke(color: string, imagePoint: { x: number; y: number }, s: StickmanState): StickmanStroke {
-  return { color, size: BRUSH_SIZE, points: [imageToLocal(s, imagePoint.x, imagePoint.y)] };
+export function startStroke(
+  color: string,
+  imagePoint: { x: number; y: number },
+  s: StickmanState,
+  size: number = BRUSH_SIZE,
+): StickmanStroke {
+  return { color, size, points: [imageToLocal(s, imagePoint.x, imagePoint.y)] };
 }
 
 /**
