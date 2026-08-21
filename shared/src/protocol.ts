@@ -58,6 +58,7 @@ export type Winner = 'hider' | 'seekers';
 
 export const HIDE_MS = 60_000;
 export const SEEK_MS = 120_000;
+export const RESULT_MS = 10_000;
 export const LOCKOUT_MS = 3_000;
 export const MAX_PLAYERS = 8;
 export const MIN_PLAYERS = 2;

@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HIDE_MS, LOCKOUT_MS, MAX_PLAYERS, MAX_SCALE, MIN_SCALE, SEEK_MS, type Background } from 'shared/protocol';
+import {
+  HIDE_MS,
+  LOCKOUT_MS,
+  MAX_PLAYERS,
+  MAX_SCALE,
+  MIN_SCALE,
+  RESULT_MS,
+  SEEK_MS,
+  type Background,
+} from 'shared/protocol';
 import { type Emit, RoomEngine, realScheduler } from '../src/engine/room-engine';
 
 interface RecordedEvent {
@@ -384,7 +393,7 @@ describe('RoomEngine — in-game rooms reject new joins', () => {
   });
 });
 
-describe('RoomEngine — restart from the result screen', () => {
+describe('RoomEngine — auto-return to lobby after the result countdown', () => {
   /** Plays a full round to the result phase (seeker clicks the default stickman). */
   function playToResult(engine: RoomEngine, events: RecordedEvent[]) {
     const ids = setupTwoPlayerRoom(engine);
@@ -396,46 +405,54 @@ describe('RoomEngine — restart from the result screen', () => {
     return ids;
   }
 
-  it('returns the room to the lobby and allows starting a new round (normal case)', () => {
+  it('sets endsAt to now + RESULT_MS on a found result, then auto-returns to the lobby with the background preserved (normal case)', () => {
     const { engine, events } = createEngine();
-    const { hostId, joinerId } = playToResult(engine, events);
+    const before = Date.now();
+    const { hostId } = playToResult(engine, events);
 
-    expect(engine.restart(hostId, 'same')).toEqual({ ok: true });
+    const resultState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(resultState.payload).toMatchObject({ phase: 'result', endsAt: before + RESULT_MS });
+
+    vi.advanceTimersByTime(RESULT_MS);
     const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
-    expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null });
+    expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null, background });
 
-    // 'same' keeps the background, so the host can start round 2 immediately
+    // background survived the auto-return, so the host can start round 2 immediately
     expect(engine.start(hostId)).toEqual({ ok: true });
   });
 
-  it("clears the background in 'new' mode so the host must capture a fresh URL", () => {
+  it('sets endsAt to exactly now + RESULT_MS on a timeout result too, then auto-returns (boundary case)', () => {
     const { engine, events } = createEngine();
-    const { hostId } = playToResult(engine, events);
+    const { hostId } = setupTwoPlayerRoom(engine);
+    engine.start(hostId);
+    vi.advanceTimersByTime(HIDE_MS); // enter seek
+    const beforeTimeout = Date.now();
+    vi.advanceTimersByTime(SEEK_MS); // seek timer expires -> enterResult
 
-    expect(engine.restart(hostId, 'new')).toEqual({ ok: true });
+    const resultState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(resultState.payload).toMatchObject({
+      phase: 'result',
+      endsAt: beforeTimeout + SEEK_MS + RESULT_MS,
+    });
+
+    vi.advanceTimersByTime(RESULT_MS);
     const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
-    expect(lastState.payload).toMatchObject({ phase: 'lobby', background: null });
-    expect(engine.start(hostId)).toEqual({ ok: false, code: 'NEED_BACKGROUND' });
+    expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null });
   });
 
-  it('rejects a restart from a non-host player (NOT_HOST error case)', () => {
+  it('clears the result timer when the room empties during the countdown, so the expiry is a no-op (error/cleanup case)', () => {
     const { engine, events } = createEngine();
-    const { joinerId } = playToResult(engine, events);
-    expect(engine.restart(joinerId, 'same')).toEqual({ ok: false, code: 'NOT_HOST' });
+    const { hostId, joinerId } = playToResult(engine, events);
+
+    engine.leave(hostId);
+    engine.leave(joinerId); // room now empty -> clearTimers deletes the resultTimer
+    events.length = 0;
+
+    expect(() => vi.advanceTimersByTime(RESULT_MS)).not.toThrow();
+    expect(events).toHaveLength(0); // no room:state for a room that no longer exists
   });
 
-  it('rejects a restart outside the result phase (BAD_PHASE)', () => {
-    const { engine } = createEngine();
-    const { hostId } = setupTwoPlayerRoom(engine); // still in lobby
-    expect(engine.restart(hostId, 'same')).toEqual({ ok: false, code: 'BAD_PHASE' });
-  });
-
-  it('rejects a restart from a player who is in no room (ROOM_NOT_FOUND boundary)', () => {
-    const { engine } = createEngine();
-    expect(engine.restart('ghost-id', 'same')).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
-  });
-
-  it('clears an active seek lockout across a restart so round 2 starts unlocked', () => {
+  it('clears an active seek lockout via the auto-return so round 2 starts unlocked', () => {
     // rng 0 always picks players[0] (the host) as hider, in both rounds.
     const { engine, events } = createEngine(() => 0);
     const { code, hostId, joinerId } = setupTwoPlayerRoom(engine);
@@ -444,13 +461,21 @@ describe('RoomEngine — restart from the result screen', () => {
     engine.start(hostId);
     expect(hiderIdFrom(events)).toBe(hostId);
     engine.hideConfirm(hostId);
-    expect(engine.click(joinerId, 0, 0)).toBe('miss'); // joiner locked for 3s
-    expect(engine.click(join2.playerId, 720, 80)).toBe('hit'); // round ends
+    const lockedAt = Date.now();
+    expect(engine.click(joinerId, 0, 0)).toBe('miss'); // joiner locked until lockedAt + LOCKOUT_MS
+    expect(engine.click(join2.playerId, 720, 80)).toBe('hit'); // round ends -> result
 
-    expect(engine.restart(hostId, 'same')).toEqual({ ok: true });
+    vi.advanceTimersByTime(RESULT_MS); // auto-return fires resetToLobby()
+
+    // RESULT_MS (10s) already exceeds LOCKOUT_MS (3s), so by the time the
+    // auto-return lands, the lock would look expired by elapsed time alone
+    // even if resetToLobby's lockouts.clear() were dropped. Rewind behind the
+    // lock's original expiry so an unlocked verdict can only be explained by
+    // the explicit clear, not by time passing.
+    vi.setSystemTime(lockedAt + LOCKOUT_MS - 1);
+
     engine.start(hostId);
     engine.hideConfirm(hostId);
-    // fake time never advanced, so without lockouts.clear() this would be 'locked'
     expect(engine.click(joinerId, 0, 0)).toBe('miss');
   });
 });
