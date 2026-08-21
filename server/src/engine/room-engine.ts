@@ -159,6 +159,13 @@ export class RoomEngine {
     }
 
     if (room.phase === 'hide' || room.phase === 'seek') {
+      // Priority: too few players overall beats either single-role
+      // wipeout, since being nearly alone is the dominant fact.
+      if (room.players.length < MIN_PLAYERS) {
+        this.emit('all', 'game:aborted', { reason: 'not_enough_players' });
+        this.resetToLobby(room);
+        return;
+      }
       if (room.hiderIds.size === 0) {
         // Abort only fires once every hider is gone — a partial hider
         // departure just shrinks the game (below).
@@ -167,8 +174,8 @@ export class RoomEngine {
         return;
       }
       const seekersLeft = room.players.some((p) => !room.hiderIds.has(p.id));
-      if (!seekersLeft || room.players.length < MIN_PLAYERS) {
-        this.emit('all', 'game:aborted', { reason: 'not_enough_players' });
+      if (!seekersLeft) {
+        this.emit('all', 'game:aborted', { reason: 'seeker_left' });
         this.resetToLobby(room);
         return;
       }

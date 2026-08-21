@@ -219,15 +219,20 @@ export interface ServerToClientEvents {
     stickmen: Array<{ playerId: string; nickname: string; stickman: StickmanState; found: boolean }>;
     reason: 'all_found' | 'timeout';
   }) => void;
-  // Mid-game abort: the room dropped below a playable state (hider left, or
-  // fewer than MIN_PLAYERS remain) — everyone returns to the lobby.
-  'game:aborted': (payload: { reason: 'hider_left' | 'not_enough_players' }) => void;
+  // Mid-game abort: the room dropped below a playable state (no hiders left,
+  // no seekers left, or fewer than MIN_PLAYERS remain) — everyone returns to
+  // the lobby.
+  'game:aborted': (payload: { reason: 'hider_left' | 'seeker_left' | 'not_enough_players' }) => void;
 }
 
 export interface ClientToServerEvents {
   'room:create': (req: RoomCreateReq, ack: (res: RoomCreateAck) => void) => void;
   'room:join': (req: RoomJoinReq, ack: (res: RoomJoinAck) => void) => void;
   'rooms:list': (ack: (res: { ok: true; rooms: RoomSummary[] }) => void) => void;
+  // Leaves the current room while keeping the socket connected (e.g. an exit
+  // button, as opposed to a disconnect). Always acks {ok:true}, even if the
+  // caller wasn't in a room -- idempotent so a retry/double-click is safe.
+  'room:leave': (ack: (res: { ok: true }) => void) => void;
   'room:setBackground': (req: SetBackgroundReq, ack: (res: Result) => void) => void;
   'room:setHiderCount': (req: SetHiderCountReq, ack: (res: Result) => void) => void;
   'game:start': (ack: (res: Result) => void) => void;

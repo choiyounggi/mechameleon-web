@@ -551,6 +551,38 @@ describe('RoomEngine — leave edge cases (D8)', () => {
     expect(events.some((e) => e.event === 'game:end')).toBe(false);
   });
 
+  it('aborts with seeker_left when the last non-hider leaves but >= MIN_PLAYERS hiders remain (D3)', () => {
+    const { engine, events } = createEngine();
+    const { hostId, ids } = setupRoom(engine, 3);
+    engine.setHiderCount(hostId, 2); // 2 hiders, 1 seeker
+    engine.start(hostId);
+    const hiders = hiderIdsFrom(events);
+    expect(hiders).toHaveLength(2);
+    const seekerId = ids.find((id) => !hiders.includes(id))!;
+
+    engine.leave(seekerId); // 2 hiders remain -> players.length(2) is NOT < MIN_PLAYERS(2)
+    const abortEvent = events.find((e) => e.event === 'game:aborted');
+    expect(abortEvent?.payload).toEqual({ reason: 'seeker_left' });
+    expect(events.some((e) => e.event === 'game:end')).toBe(false);
+    const lastState = events.filter((e) => e.event === 'room:state').at(-1)!;
+    expect(lastState.payload).toMatchObject({ phase: 'lobby', endsAt: null });
+  });
+
+  it('prioritizes not_enough_players over hider_left when a 2-player game drops below MIN_PLAYERS on a hider leave (D3)', () => {
+    const { engine, events } = createEngine();
+    const { hostId } = setupRoom(engine, 2);
+    engine.setHiderCount(hostId, 1); // 1 hider, 1 seeker
+    engine.start(hostId);
+    const hiders = hiderIdsFrom(events);
+    expect(hiders).toHaveLength(1);
+    // the hider leaving would independently satisfy hider_left (hiderIds.size -> 0),
+    // but only 1 player remains (< MIN_PLAYERS) so not_enough_players must win.
+    engine.leave(hiders[0]);
+
+    const abortEvent = events.find((e) => e.event === 'game:aborted');
+    expect(abortEvent?.payload).toEqual({ reason: 'not_enough_players' });
+  });
+
   it('keeps the game running and reassigns host when a non-hider host leaves', () => {
     // createRoom consumes 6 rng() calls for the room code first; then
     // pickHiders (k=floor(5/2)=2) consumes 2 more. Sequence [0.9, 0] on
@@ -570,6 +602,17 @@ describe('RoomEngine — leave edge cases (D8)', () => {
     const payload = lastState.payload as { phase: string; players: Array<{ isHost: boolean; id: string }> };
     expect(payload.phase).toBe('hide');
     expect(payload.players.filter((p) => p.isHost)).toHaveLength(1);
+  });
+
+  it('deletes the room when the last remaining player leaves (boundary)', () => {
+    const { engine } = createEngine();
+    const { code, hostId, ids } = setupRoom(engine, 2);
+    const joinerId = ids.find((id) => id !== hostId)!;
+
+    engine.leave(hostId);
+    engine.leave(joinerId); // room now has 0 players -> deleted
+
+    expect(engine.join(code, 'late')).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
   });
 });
 

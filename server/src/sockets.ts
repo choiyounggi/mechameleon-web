@@ -171,6 +171,21 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       ack({ ok: true, result });
     });
 
+    socket.on('room:leave', (ack) => {
+      if (!myPlayerId) return ack({ ok: true });
+      const playerId = myPlayerId;
+      const roomCode = roomOfPlayer.get(playerId);
+      // Unsubscribe BEFORE engine.leave() runs -- it broadcasts the room's
+      // final room:state synchronously (io.to(roomCode).emit), and a socket
+      // still subscribed at that point would receive its own departure.
+      if (roomCode) socket.leave(roomCode);
+      withRoomContext(roomCode, () => engine.leave(playerId));
+      playerSockets.delete(playerId);
+      roomOfPlayer.delete(playerId);
+      myPlayerId = undefined;
+      ack({ ok: true });
+    });
+
     socket.on('disconnect', () => {
       if (!myPlayerId) return;
       const playerId = myPlayerId;

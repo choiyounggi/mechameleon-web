@@ -178,4 +178,67 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
     }
   });
 
+  it('room:leave keeps the socket connected, unsubscribes it from room broadcasts, and lets the same socket re-enter via room:create', async () => {
+    const host = connect();
+    const guest = connect();
+    try {
+      await Promise.all([waitConnected(host), waitConnected(guest)]);
+
+      const createAck: any = await new Promise((resolve) =>
+        host.emit('room:create', { nickname: 'host', roomName: '나가기검증', isPrivate: false }, resolve),
+      );
+      const guestJoinAck: any = await new Promise((resolve) =>
+        guest.emit('room:join', { code: createAck.code, nickname: 'guest' }, resolve),
+      );
+      expect(guestJoinAck.ok).toBe(true);
+
+      // register BEFORE leaving so this also catches a leak of the final
+      // room:state that engine.leave() broadcasts synchronously while the
+      // room:leave handler is still producing its ack (review r1/F1).
+      let stateCountAfterLeave = 0;
+      guest.on('room:state', () => {
+        stateCountAfterLeave++;
+      });
+
+      const leaveAck: any = await new Promise((resolve) => guest.emit('room:leave', resolve));
+      expect(leaveAck).toEqual({ ok: true });
+
+      // flush any in-flight event delivery before asserting silence
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(stateCountAfterLeave).toBe(0);
+
+      // the left socket must not receive further broadcasts for the old room either
+      const bgAck: any = await new Promise((resolve) =>
+        host.emit(
+          'room:setBackground',
+          { background: { imageUrl: 'https://example.com/b.png', width: 1440, height: 2000 } },
+          resolve,
+        ),
+      );
+      expect(bgAck.ok).toBe(true);
+      expect(stateCountAfterLeave).toBe(0);
+
+      // the same socket (still connected) can start a fresh room
+      const secondCreateAck: any = await new Promise((resolve) =>
+        guest.emit('room:create', { nickname: 'guest-again', roomName: '재입장방', isPrivate: false }, resolve),
+      );
+      expect(secondCreateAck.ok).toBe(true);
+      expect(secondCreateAck.code).not.toBe(createAck.code);
+    } finally {
+      host.disconnect();
+      guest.disconnect();
+    }
+  });
+
+  it('room:leave on a socket that never joined a room is a harmless no-op ack (idempotent)', async () => {
+    const client = connect();
+    try {
+      await waitConnected(client);
+      const leaveAck: any = await new Promise((resolve) => client.emit('room:leave', resolve));
+      expect(leaveAck).toEqual({ ok: true });
+    } finally {
+      client.disconnect();
+    }
+  });
+
 });
