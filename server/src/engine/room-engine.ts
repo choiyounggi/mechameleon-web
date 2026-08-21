@@ -246,7 +246,11 @@ export class RoomEngine {
 
     for (const p of room.players) {
       if (room.hiderIds.has(p.id)) {
-        this.emit(p.id, 'phase:hide', { background: room.background, endsAt: room.endsAt });
+        this.emit(p.id, 'phase:hide', {
+          background: room.background,
+          endsAt: room.endsAt,
+          stickman: room.stickmen.get(p.id)!,
+        });
       } else {
         this.emit(p.id, 'phase:hideWait', { endsAt: room.endsAt });
       }

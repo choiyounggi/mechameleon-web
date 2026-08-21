@@ -139,6 +139,35 @@ describe('RoomEngine — normal multi-hider flow', () => {
   });
 });
 
+describe('RoomEngine — phase:hide payload carries the assigned stickman (B1-B3)', () => {
+  it("each hider's phase:hide carries their own D5-spread stickman, distinct per hider, with background/endsAt unchanged", () => {
+    const { engine, events } = createEngine();
+    const { hostId } = setupRoom(engine, 3);
+    expect(engine.setHiderCount(hostId, 2)).toEqual({ ok: true }); // force 2 hiders in a 3-player room
+    engine.start(hostId);
+
+    const hiders = hiderIdsFrom(events);
+    expect(hiders).toHaveLength(2);
+
+    const hideEvents = events.filter((e) => e.event === 'phase:hide');
+    expect(hideEvents).toHaveLength(2);
+
+    hideEvents.forEach((e) => {
+      const idx = hiders.indexOf(e.target);
+      expect(idx).toBeGreaterThanOrEqual(0); // every phase:hide target must be a hider
+      const payload = e.payload as { background: Background; endsAt: number; stickman: { x: number } };
+      expect(payload.background).toEqual(background);
+      expect(typeof payload.endsAt).toBe('number');
+      const expectedX = Math.round((background.width * (idx + 1)) / (hiders.length + 1));
+      expect(payload.stickman.x).toBe(expectedX);
+    });
+
+    // the two hiders' x positions must actually differ (not both collapsing to the same spot)
+    const xs = hideEvents.map((e) => (e.payload as { stickman: { x: number } }).stickman.x);
+    expect(new Set(xs).size).toBe(2);
+  });
+});
+
 describe('RoomEngine — hider count: default 50/50 split (D3)', () => {
   it('8-player room with no explicit hiderCount starts with 4 hiders', () => {
     const { engine, events } = createEngine();

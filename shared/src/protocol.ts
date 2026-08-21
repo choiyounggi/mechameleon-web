@@ -208,7 +208,7 @@ export type SetHiderCountReq = z.infer<typeof zSetHiderCountReq>;
 export interface ServerToClientEvents {
   'room:state': (state: RoomStatePublic) => void;
   'game:role': (payload: { role: 'hider' | 'seeker' }) => void;
-  'phase:hide': (payload: { background: Background; endsAt: number }) => void;
+  'phase:hide': (payload: { background: Background; endsAt: number; stickman: StickmanState }) => void;
   'phase:hideWait': (payload: { endsAt: number }) => void;
   'phase:seek': (payload: { background: Background; stickmen: SeekStickman[]; endsAt: number }) => void;
   'seek:miss': (payload: { x: number; y: number; by: string }) => void;
