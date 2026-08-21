@@ -22,16 +22,20 @@ function makeStickman(overrides: Partial<StickmanState> = {}): StickmanState {
 // state at draw time (not a node-canvas dependency -- D13).
 function createMockCtx() {
   const ops: string[] = [];
+  const alphaStack: number[] = [];
   const ctx = {
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0,
     lineCap: 'butt' as CanvasLineCap,
+    globalAlpha: 1,
     canvas: { width: 1440, height: 900 },
     save() {
+      alphaStack.push(ctx.globalAlpha);
       ops.push('save');
     },
     restore() {
+      ctx.globalAlpha = alphaStack.pop() ?? ctx.globalAlpha;
       ops.push('restore');
     },
     drawImage() {
@@ -47,13 +51,13 @@ function createMockCtx() {
       ops.push(`lineTo:${x}:${y}`);
     },
     stroke() {
-      ops.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}:${ctx.lineCap}`);
+      ops.push(`stroke:${ctx.strokeStyle}:${ctx.lineWidth}:${ctx.lineCap}:${ctx.globalAlpha}`);
     },
     arc(x: number, y: number, r: number) {
       ops.push(`arc:${x}:${y}:${r}`);
     },
     fill() {
-      ops.push(`fill:${ctx.fillStyle}`);
+      ops.push(`fill:${ctx.fillStyle}:${ctx.globalAlpha}`);
     },
   };
   return { ctx: ctx as unknown as CanvasRenderingContext2D, ops };
@@ -143,5 +147,45 @@ describe('drawStickman (white base body + outline; strokes clipped via scratch c
     // renderer must fall back to the unpainted body without throwing.
     expect(() => drawStickman(ctx, painted)).not.toThrow();
     expect(ops.some((op) => op === 'drawImage')).toBe(false);
+  });
+});
+
+describe('drawStickman outline alpha (D1): seek-style fade-in via the 4th arg', () => {
+  it('paints the outline pass at the given alpha, wrapped in its own save/restore (normal: partial alpha)', () => {
+    const { ctx, ops } = createMockCtx();
+    drawStickman(ctx, makeStickman(), 'seek', 0.5);
+    const outlineFills = ops.filter((op) => op.startsWith('fill:#3b332b'));
+    expect(outlineFills.length).toBeGreaterThan(0);
+    expect(outlineFills.every((op) => op.endsWith(':0.5'))).toBe(true);
+    // nested save/restore around the alpha-scoped outline pass, on top of the
+    // outer save/restore that wraps the whole body draw.
+    expect(ops.filter((op) => op === 'save').length).toBeGreaterThanOrEqual(2);
+    expect(ops.filter((op) => op === 'restore').length).toBeGreaterThanOrEqual(2);
+    // the white base body afterward stays fully opaque regardless of the outline alpha.
+    const bodyFills = ops.filter((op) => op.startsWith('fill:#ffffff'));
+    expect(bodyFills.every((op) => op.endsWith(':1'))).toBe(true);
+  });
+
+  it('omits the outline pass entirely at alpha 0, matching the no-alpha seek default (boundary: zero alpha)', () => {
+    const { ctx, ops } = createMockCtx();
+    drawStickman(ctx, makeStickman(), 'seek', 0);
+    const draws = ops.filter((op) => op.startsWith('fill:') || op.startsWith('stroke:'));
+    expect(draws.some((op) => op.includes('#3b332b'))).toBe(false);
+  });
+
+  it('clamps an out-of-range alpha into [0,1] instead of over/under-painting (error: out-of-bounds input)', () => {
+    const { ctx: ctxOver, ops: opsOver } = createMockCtx();
+    drawStickman(ctxOver, makeStickman(), 'seek', 1.5);
+    expect(opsOver.filter((op) => op.startsWith('fill:#3b332b')).every((op) => op.endsWith(':1'))).toBe(true);
+
+    const { ctx: ctxUnder, ops: opsUnder } = createMockCtx();
+    drawStickman(ctxUnder, makeStickman(), 'seek', -1);
+    expect(opsUnder.some((op) => op.includes('#3b332b'))).toBe(false);
+  });
+
+  it('ignores the alpha argument entirely in edit style, which is always fully opaque (boundary: edit unaffected)', () => {
+    const { ctx, ops } = createMockCtx();
+    drawStickman(ctx, makeStickman(), 'edit', 0);
+    expect(ops.some((op) => op.startsWith('fill:#3b332b:1'))).toBe(true);
   });
 });

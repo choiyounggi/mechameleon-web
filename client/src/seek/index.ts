@@ -7,7 +7,7 @@ import { drawStickman } from '../render/stickman-renderer';
 import { formatRemaining, remainingMs } from '../hide/timer';
 import { attachPressFX, paintBurst, screenShake } from '../fx';
 import { attachLeaveConfirm } from '../util/leave-confirm';
-import { applySeekClickAck, canClick, lockoutBadgeText, seekBodyStyle } from './logic';
+import { applySeekClickAck, canClick, hiderOutlineAlpha, lockoutBadgeText, seekBodyStyle } from './logic';
 import type { SeekEndPayload } from './logic';
 import { createRippleStore, drawRipples } from './ripple';
 import type { ActiveRipple } from './ripple';
@@ -148,9 +148,12 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     // D3: unfound hiders stay in 'seek' style (no ink outline, camouflage
-    // intact); a found hider is redrawn in the default outlined style.
+    // intact) but fade the outline back in per shared's outlineAlpha reveal
+    // schedule; a found hider is redrawn in the default fully-outlined style.
+    const ms = remainingMs(endsAt, Date.now());
     for (const s of stickmen) {
-      drawStickman(overlayCtx, s.stickman, seekBodyStyle(s.playerId, foundIds));
+      const alpha = hiderOutlineAlpha(s.playerId, foundIds, s.colorCount, ms);
+      drawStickman(overlayCtx, s.stickman, seekBodyStyle(s.playerId, foundIds), alpha);
     }
     drawRipples(overlayCtx, ripples);
   }
@@ -234,6 +237,9 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     timerEl.textContent = formatRemaining(ms);
     remainEl.textContent = String(Math.ceil(ms / 1000));
     renderBadge();
+    // D3: redraw here (not a separate rAF loop) so the outline fade advances
+    // on the existing 500ms tick cadence.
+    redrawOverlay(rippleStore.active(Date.now()));
   }
   tick();
   const intervalId = window.setInterval(tick, TIMER_TICK_MS);

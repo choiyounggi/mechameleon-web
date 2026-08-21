@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applySeekClickAck,
   canClick,
+  hiderOutlineAlpha,
   lockoutBadgeText,
   RESULT_PULSE_BASE_RADIUS,
   resolveResultText,
@@ -110,6 +111,28 @@ describe('seekBodyStyle (D3): per-hider render mode in the seek overlay', () => 
     const foundIds = new Set(['h2']);
     expect(seekBodyStyle('h1', foundIds)).toBe('seek');
     expect(seekBodyStyle('h2', foundIds)).toBeUndefined();
+  });
+});
+
+describe('hiderOutlineAlpha (D3): per-hider outline reveal alpha in the seek overlay', () => {
+  it('is always fully outlined once found, regardless of color count or remaining time (normal: found)', () => {
+    expect(hiderOutlineAlpha('h1', new Set(['h1']), 4, 90_000)).toBe(1);
+  });
+
+  it('stays fully hidden for an unfound 4-color hider throughout the seek phase (normal: 4+ colors)', () => {
+    expect(hiderOutlineAlpha('h1', new Set(), 4, 90_000)).toBe(0);
+  });
+
+  it('is halfway revealed for an unfound 2-color hider at half of its 60s reveal window (normal: mid-fade)', () => {
+    expect(hiderOutlineAlpha('h1', new Set(), 2, 30_000)).toBeCloseTo(0.5);
+  });
+
+  it('is fully outlined for an unfound 0-color hider, same as the <=1 full-outline bucket (boundary: colorCount below 1)', () => {
+    expect(hiderOutlineAlpha('h1', new Set(), 0, 90_000)).toBe(1);
+  });
+
+  it('clamps to full outline for a 2-color hider with a negative (overrun) remaining time (error: extreme remainingMs)', () => {
+    expect(hiderOutlineAlpha('h1', new Set(), 2, -1_000)).toBe(1);
   });
 });
 
