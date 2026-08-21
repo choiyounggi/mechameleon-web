@@ -2,6 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '../src/net';
 import { getPhase } from '../src/phases';
 import { initSeek } from '../src/seek';
+import { paintBurst, screenShake } from '../src/fx';
+
+// D8: fx is a visual side effect, not seek's own behavior -- stub it so these
+// tests assert what seek *decides* to trigger, not fx's internals (already
+// covered by fx.test.ts).
+vi.mock('../src/fx', () => ({
+  paintBurst: vi.fn(),
+  screenShake: vi.fn(),
+  attachPressFX: vi.fn(() => vi.fn()),
+}));
 
 const NOW = 1_700_000_000_000;
 
@@ -50,6 +60,8 @@ function makeCtx(role: 'hider' | 'seeker'): {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
+  vi.mocked(paintBurst).mockClear();
+  vi.mocked(screenShake).mockClear();
 });
 
 afterEach(() => {
@@ -229,6 +241,105 @@ describe('seek controller: seek:miss ripple wiring (D4)', () => {
     expect(rafSpy).toHaveBeenCalled();
 
     rafSpy.mockRestore();
+    getPhase('seek').unmount();
+  });
+
+  it('bursts paint at the transformed screen coordinates for an in-bounds miss (normal: D4 coordinate transform)', () => {
+    const { ctx, handlers } = makeCtx('hider');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickman: STICKMAN,
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+
+    handlers.get('seek:miss')!({ x: 10, y: 20, by: 'someone-else' });
+
+    // jsdom lays out the overlay canvas at rect {left:0, top:0} with no page
+    // scroll, so the transform is the identity here -- this pins the actual
+    // formula (rect.left/top + x/y + scrollX/Y), not just "some number".
+    expect(paintBurst).toHaveBeenCalledWith(10, 20, { count: 8 });
+
+    getPhase('seek').unmount();
+  });
+
+  it('skips the paint burst when the miss coordinates fall outside the overlay canvas rect (boundary: D4 out-of-bounds)', () => {
+    const { ctx, handlers } = makeCtx('hider');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickman: STICKMAN,
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+
+    handlers.get('seek:miss')!({ x: -5, y: 20, by: 'someone-else' });
+    handlers.get('seek:miss')!({ x: 10, y: 9999, by: 'someone-else' });
+
+    expect(paintBurst).not.toHaveBeenCalled();
+
+    getPhase('seek').unmount();
+  });
+});
+
+describe('seek controller: lockout shake (D2)', () => {
+  it('screen-shakes the canvas container once when a click starts a new lockout (normal)', async () => {
+    const { ctx, handlers, emit } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickman: STICKMAN,
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+    const overlay = root.querySelectorAll('canvas')[1];
+
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const ack = emit.mock.calls[0]![2] as (res: unknown) => void;
+    ack({ ok: true, result: 'miss' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screenShake).toHaveBeenCalledTimes(1);
+
+    getPhase('seek').unmount();
+  });
+
+  it('renders the lockout chip as a hidden .mc-keycap that becomes visible while locked, and hides again once it expires (normal + boundary: D2 lockout chip)', async () => {
+    const { ctx, handlers, emit } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickman: STICKMAN,
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+    const lockoutEl = root.querySelector('.mc-seek-lockout') as HTMLElement;
+    const overlay = root.querySelectorAll('canvas')[1];
+
+    expect(lockoutEl).not.toBeNull();
+    expect(lockoutEl.hidden).toBe(true);
+    expect(lockoutEl.querySelector('.mc-keycap')).not.toBeNull();
+
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const ack = emit.mock.calls[0]![2] as (res: unknown) => void;
+    ack({ ok: true, result: 'miss' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(lockoutEl.hidden).toBe(false);
+
+    // the running tick() interval re-renders the badge every 500ms; once the
+    // 3s lock expires, the next tick should hide the chip again.
+    vi.advanceTimersByTime(3_000);
+
+    expect(lockoutEl.hidden).toBe(true);
+
     getPhase('seek').unmount();
   });
 });

@@ -1,1 +1,105 @@
 /* Hallmark · screen: seek · no seek-specific rules existed in style.css to migrate (t1-foundation T2, D7) */
+
+/* ==== seek HUD (D1) ==== */
+
+.mc-seek-hud {
+  position: fixed;
+  top: var(--space-sm);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
+  pointer-events: none;
+}
+
+.mc-seek-hud-timer {
+  font-family: var(--font-numeral);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-seek-hourglass-frame {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 1.4;
+}
+
+.mc-seek-hourglass-sand {
+  fill: var(--color-danger);
+}
+
+.mc-seek-remain {
+  position: fixed;
+  right: var(--space-md);
+  bottom: var(--space-md);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ==== seek lockout chip (D2) ==== */
+
+.mc-seek-lockout {
+  position: fixed;
+  left: var(--space-md);
+  bottom: var(--space-md);
+  z-index: 5;
+}
+
+.mc-seek-lockout[hidden] {
+  display: none;
+}
+
+.mc-seek-lockout .mc-keycap {
+  background: var(--color-danger);
+  color: var(--color-ink-strong);
+}
+
+/* ==== result screen (D5) ==== */
+
+.mc-result-banner {
+  text-align: center;
+  padding: var(--space-lg) var(--space-md) var(--space-sm);
+  font-size: clamp(28px, 6vw, 56px);
+}
+
+.mc-result-banner .mc-title-paint span {
+  animation: mc-pop-in 420ms var(--ease-out) both;
+  animation-delay: var(--mc-pop-delay, 0ms);
+}
+
+.mc-result-banner--found .mc-title-paint {
+  text-shadow: 0 0 28px var(--color-danger);
+}
+
+.mc-result-banner--survived .mc-title-paint {
+  text-shadow: 0 0 28px var(--color-go);
+}
+
+.mc-result-stage {
+  margin: 0 auto var(--space-md);
+  width: fit-content;
+  border: 2.5px solid var(--color-ink-strong);
+  border-radius: 12px;
+  box-shadow: 0 5px 0 var(--color-ink-strong);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.mc-result-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-result-banner .mc-title-paint span {
+    animation-duration: 0.001ms;
+  }
+}
