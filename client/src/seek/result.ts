@@ -72,7 +72,10 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   title.className = 'mc-title-paint';
   Array.from(text).forEach((char, i) => {
     const span = document.createElement('span');
-    span.textContent = char;
+    // r1/F2: a plain space as the sole content of its own inline-block span
+    // collapses to zero width in whitespace processing -- nbsp is immune to
+    // that collapse, so word gaps stay visible in the letter-by-letter banner.
+    span.textContent = char === ' ' ? ' ' : char;
     span.style.setProperty('--mc-pop-delay', `${i * 30}ms`);
     title.appendChild(span);
   });
@@ -95,6 +98,7 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   const buttons = document.createElement('div');
   buttons.className = 'mc-result-buttons';
   const errorEl = document.createElement('div');
+  errorEl.className = 'mc-result-error';
 
   // Host decides the next round: same map for an instant rematch, or a fresh
   // URL (background cleared, so the lobby demands a new capture). Everyone
@@ -107,7 +111,7 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
     );
   } else {
     const waiting = document.createElement('p');
-    waiting.className = 'mc-hud-label';
+    waiting.className = 'mc-hud-label mc-result-waiting';
     waiting.textContent = '호스트가 다음 게임을 정하고 있어요…';
     root.appendChild(waiting);
   }

@@ -67,6 +67,13 @@ function makeRoom(overrides: Partial<RoomStatePublic> = {}): RoomStatePublic {
   };
 }
 
+// r1/F2: the banner's letter-span markup renders a word gap as nbsp (U+00A0),
+// not a plain space (U+0020) -- normalize so full-text assertions keep
+// verifying the same words regardless of that internal encoding choice.
+function normalizeNbsp(text: string | null): string {
+  return (text ?? '').replace(/ /g, ' ');
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -94,7 +101,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
 
     getPhase('result').mount(root, ctx);
 
-    expect(root.textContent).toContain('찾은이님이 찾았다!');
+    expect(normalizeNbsp(root.textContent)).toContain('찾은이님이 찾았다!');
     const canvas = root.querySelector('canvas');
     expect(canvas).not.toBeNull();
     expect(canvas!.width).toBe(800);
@@ -110,7 +117,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
 
     getPhase('result').mount(root, ctx);
 
-    expect(root.textContent).toContain('끝까지 못 찾았다…');
+    expect(normalizeNbsp(root.textContent)).toContain('끝까지 못 찾았다…');
     expect(root.querySelector('canvas')).toBeNull();
 
     getPhase('result').unmount();
@@ -179,7 +186,7 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
 
     freshGetPhase('result').mount(root, ctx);
 
-    expect(root.textContent).toContain('게임 종료');
+    expect(normalizeNbsp(root.textContent)).toContain('게임 종료');
     const leaveBtnFresh = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '나가기');
     expect(leaveBtnFresh).not.toBeUndefined();
 
@@ -257,6 +264,22 @@ describe('result controller (D8): game:end -> rendered outcome', () => {
 
     expect(cafSpy).toHaveBeenCalled();
     cafSpy.mockRestore();
+  });
+
+  it('renders the word gap in the banner as a non-breaking space so it survives inline-block collapse (normal: r1/F2)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'seekers', foundBy: 'p2', stickman: STICKMAN, reason: 'found' });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    // '찾은이님이 찾았다!' has its one space at index 5 (0-based).
+    const letterSpans = root.querySelectorAll('.mc-title-paint span');
+    expect(letterSpans[5]!.textContent).toBe(' ');
+    expect(letterSpans[5]!.textContent).not.toBe(' ');
+
+    getPhase('result').unmount();
   });
 
   it('shows the found (red) banner variant when the seeker wins (normal: D5 banner variant)', () => {
