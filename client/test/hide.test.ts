@@ -250,6 +250,33 @@ describe('hide HUD: keycap control strip (D3, D8)', () => {
   });
 });
 
+describe('hide HUD: error pill visibility (F1, r1 review)', () => {
+  it('keeps the error pill hidden when there is no error to show (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const errorEl = root.querySelector('.mc-error') as HTMLElement;
+    expect(errorEl.hidden).toBe(true);
+    ctrl.unmount();
+  });
+
+  it('reveals the error pill once a read failure sets a message (error)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(Date.now() + 60_000));
+    const bgCanvas = root.querySelectorAll('canvas')[0] as HTMLCanvasElement;
+    const errorEl = root.querySelector('.mc-error') as HTMLElement;
+    // jsdom has no Canvas 2D support, so bgCtx is null here — this exercises
+    // the same "이미지를 읽을 수 없어요" guard as a real tainted-canvas read failure.
+    bgCanvas.dispatchEvent(new MouseEvent('mousedown', { altKey: true, bubbles: true }));
+    expect(errorEl.hidden).toBe(false);
+    expect(errorEl.textContent).toBe('이미지를 읽을 수 없어요');
+    ctrl.unmount();
+  });
+});
+
 describe('hide wait screen: themed seeker hold (D6, D8)', () => {
   it('renders the themed wait screen with no inline gray styling for the seeker role (normal)', async () => {
     const { createHideController } = await import('../src/hide/index');
