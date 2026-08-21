@@ -16,6 +16,7 @@ A web-based hide-and-seek game you can sneak in with coworkers during office hou
 - One player is **randomly chosen as the hider** (60 s): move the stickman with arrow keys, then **drag with the mouse to brush-paint** its white body, picking colors from the background with **Alt(⌥)+click** — the classic eyedropper.
 - Everyone else **seeks** (120 s): scroll freely and click where the stickman is. A miss locks *you* out for 3 s and shows a subtle ripple **on everyone's screen**. First hit wins; if time runs out, the hider wins.
 - The server is the only judge — clicks are validated server-side against the shared stickman geometry.
+- After the result screen, a **10-second countdown** ("대기실로 돌아갑니다") returns everyone to the room lobby automatically — with the **previous map still selected**, so the host can start a rematch instantly or capture a fresh URL.
 
 ## Quick start
 
@@ -34,7 +35,8 @@ Then share `http://<your-ip>:3000` with coworkers on the same network. Two playe
 
 1. **Lobby** — enter a nickname, then create a room (public, or **private with a password**) or click one in the live room list.
 2. The host fetches a background URL (or uploads an image) and presses start once 2+ players are in.
-3. Hide / seek / result — see the controls below.
+3. Hide / seek / result — see the controls below. While the hider paints, seekers watch a themed hold screen (spinner + rotating hints) instead of a blank wait.
+4. After each round the whole room auto-returns to the lobby (10 s countdown) with the map preserved — restart right away or swap the map.
 
 ### Controls (hider)
 
@@ -68,6 +70,6 @@ The repo also contains scripted Playwright E2E playthroughs (see `e2e-videos/` a
 ## Notes & limits
 
 - Single server instance by design (in-memory rooms) — office scale, not internet scale.
-- "다시 하기" starts a fresh room; there is no rematch API yet.
+- Rematch is built in: every round ends with an automatic 10 s return to the same room's lobby, map preserved.
 - The capture endpoint fetches URLs server-side with only an http(s) scheme check — run it on a trusted LAN.
 - Fan homage: game concept inspired by MECCHA CHAMELEON. No assets, code, or art were copied; the visual DNA (painted-camouflage mascot, playful per-letter title) was re-created from scratch.

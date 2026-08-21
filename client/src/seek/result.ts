@@ -81,6 +81,16 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   banner.appendChild(title);
   root.appendChild(banner);
 
+  // Countdown sits above the stage canvas: the canvas is taller than the
+  // viewport, so anything appended after it lands below the fold and the
+  // 10-second return notice would never be seen without scrolling.
+  const returnMsg = document.createElement('p');
+  returnMsg.className = 'mc-hud-label mc-result-return-msg';
+  returnMsg.textContent = '대기실로 돌아갑니다';
+  const returnCount = document.createElement('div');
+  returnCount.className = 'mc-hud-num mc-result-return-count';
+  root.append(returnMsg, returnCount);
+
   let canvasCleanup: (() => void) | null = null;
   const background = ctx.state.room?.background ?? null;
   if (end?.stickman && background) {
@@ -92,14 +102,7 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
 
   // Everyone sees the same countdown to the server-driven auto-return -- the
   // server owns endsAt and broadcasts phase:'lobby' when it elapses, so this
-  // is a display-only readout (D1/D2: no client-side timer, derived every tick).
-  const returnMsg = document.createElement('p');
-  returnMsg.className = 'mc-hud-label mc-result-return-msg';
-  returnMsg.textContent = '대기실로 돌아갑니다';
-  const returnCount = document.createElement('div');
-  returnCount.className = 'mc-hud-num mc-result-return-count';
-  root.append(returnMsg, returnCount);
-
+  // is a display-only readout (no client-side timer, derived every tick).
   const endsAt = ctx.state.room?.endsAt ?? null;
   function tick(): void {
     if (endsAt === null) return;
