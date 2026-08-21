@@ -137,6 +137,35 @@ describe('RoomEngine — normal multi-hider flow', () => {
     expect(payload.stickmen.map((s) => s.playerId).sort()).toEqual([...hiders].sort());
     expect(payload.stickmen.every((s) => typeof s.nickname === 'string' && s.nickname.length > 0)).toBe(true);
   });
+
+  it('phase:seek carries each hider\'s own distinct stroke-color count (0/1/3-color hiders mixed in one room)', () => {
+    const { engine, events } = createEngine(); // rng=0 -> hiders = first 3 of 6 players
+    const { hostId } = setupRoom(engine, 6);
+    engine.start(hostId);
+    const hiders = hiderIdsFrom(events);
+    expect(hiders).toHaveLength(3);
+
+    // hiders[0]: never paints -> 0 colors (default stickman has no strokes)
+    engine.hideUpdate(hiders[1], { x: 200, y: 300, scale: 1, strokes: painted('#ff0000') });
+    engine.hideUpdate(hiders[2], {
+      x: 200,
+      y: 300,
+      scale: 1,
+      strokes: [
+        { color: '#ff0000', size: 10, points: [{ x: 0, y: 0 }] },
+        { color: '#00ff00', size: 10, points: [{ x: 0, y: 0 }] },
+        { color: '#0000ff', size: 10, points: [{ x: 0, y: 0 }] },
+      ],
+    });
+    hiders.forEach((id) => engine.hideConfirm(id));
+
+    const seekEvent = events.find((e) => e.event === 'phase:seek')!;
+    const payload = seekEvent.payload as { stickmen: Array<{ playerId: string; colorCount: number }> };
+    const byPlayer = new Map(payload.stickmen.map((s) => [s.playerId, s.colorCount]));
+    expect(byPlayer.get(hiders[0])).toBe(0);
+    expect(byPlayer.get(hiders[1])).toBe(1);
+    expect(byPlayer.get(hiders[2])).toBe(3);
+  });
 });
 
 describe('RoomEngine — phase:hide payload carries the assigned stickman (B1-B3)', () => {

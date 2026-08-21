@@ -49,6 +49,8 @@ export interface SeekStickman {
   playerId: string;
   nickname: string;
   stickman: StickmanState;
+  /** Distinct stroke color count (see distinctColorCount in stickman.ts) — drives the outline reveal schedule. */
+  colorCount: number;
 }
 
 /** One row of the public room list (lobby browser). */
@@ -74,6 +76,11 @@ export const MIN_PLAYERS = 2;
 export const IMAGE_WIDTH = 1440;
 export const MIN_SCALE = 0.5;
 export const MAX_SCALE = 2;
+
+// Outline reveal thresholds: remaining seek time at which a 2-color / 3-color
+// hider's outline starts fading in (see outlineAlpha in stickman.ts).
+export const OUTLINE_REVEAL_2_MS = 60_000;
+export const OUTLINE_REVEAL_3_MS = 30_000;
 
 // Room code alphabet (D12): uppercase A-Z + digits, minus confusable chars 0/O/1/I/L.
 export const ROOM_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
