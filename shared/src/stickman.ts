@@ -1,4 +1,4 @@
-import type { PartKey, StickmanState } from './protocol';
+import { OUTLINE_REVEAL_2_MS, OUTLINE_REVEAL_3_MS, type PartKey, type StickmanState, type StickmanStroke } from './protocol';
 
 export interface Segment {
   part: PartKey;
@@ -65,4 +65,32 @@ export function hitTest(s: StickmanState, x: number, y: number): boolean {
     const effectiveR = seg.r * s.scale + HIT_MARGIN;
     return distanceToSegment(x, y, ax, ay, bx, by) <= effectiveR;
   });
+}
+
+/** Distinct stroke colors used, hex compared case-insensitively. No coverage threshold — just count. */
+export function distinctColorCount(strokes: StickmanStroke[]): number {
+  return new Set(strokes.map((s) => s.color.toLowerCase())).size;
+}
+
+// Linear fade-in from 0 to 1 as `remainingMs` counts down through `windowMs`.
+function revealAlpha(remainingMs: number, windowMs: number): number {
+  const alpha = (windowMs - remainingMs) / windowMs;
+  return Math.max(0, Math.min(1, alpha));
+}
+
+/**
+ * Outline visibility for a hider's stickman during the seek phase, driven by
+ * how many distinct colors they painted with:
+ * - <=1 color: full outline immediately (nothing to hide behind).
+ * - 2 colors: fades in over the last OUTLINE_REVEAL_2_MS of the seek phase.
+ * - 3 colors: fades in over the last OUTLINE_REVEAL_3_MS of the seek phase.
+ * - >=4 colors: never outlined.
+ */
+export function outlineAlpha(colorCount: number, remainingMs: number): number {
+  // Non-integer or negative counts aren't a real distinctColorCount output —
+  // treat them like <=1 (full outline) rather than guessing a bucket.
+  if (colorCount <= 1 || !Number.isInteger(colorCount)) return 1;
+  if (colorCount === 2) return revealAlpha(remainingMs, OUTLINE_REVEAL_2_MS);
+  if (colorCount === 3) return revealAlpha(remainingMs, OUTLINE_REVEAL_3_MS);
+  return 0;
 }

@@ -105,14 +105,34 @@ export type BodyStyle = 'edit' | 'seek';
 /**
  * MECCHA-style body: a white blob with an ink outline, and the hider's brush
  * strokes (stickman-local coords) painted on top, clipped to the silhouette.
+ *
+ * `outlineAlphaValue` (clamped to [0,1]) lets 'seek' style fade the outline
+ * pass back in — used for the seek-phase reveal schedule (shared's
+ * outlineAlpha). Ignored in 'edit' style, which is always fully opaque.
+ * Omitting it preserves the prior binary edit/seek behavior exactly.
  */
-export function drawStickman(ctx: CanvasRenderingContext2D, s: StickmanState, style: BodyStyle = 'edit'): void {
+export function drawStickman(
+  ctx: CanvasRenderingContext2D,
+  s: StickmanState,
+  style: BodyStyle = 'edit',
+  outlineAlphaValue?: number,
+): void {
   ctx.save();
   if (style === 'edit') {
     // 1) outline pass (slightly fatter dark body behind the white fill)
     ctx.strokeStyle = BODY_OUTLINE;
     ctx.fillStyle = BODY_OUTLINE;
     traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
+  } else {
+    const alpha = Math.max(0, Math.min(1, outlineAlphaValue ?? 0));
+    if (alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = BODY_OUTLINE;
+      ctx.fillStyle = BODY_OUTLINE;
+      traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
+      ctx.restore();
+    }
   }
   // 2) white base body
   ctx.strokeStyle = BODY_BASE;

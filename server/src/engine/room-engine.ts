@@ -20,7 +20,7 @@ import {
   type StickmanState,
   type Winner,
 } from 'shared/protocol';
-import { hitTest, initialStickman } from 'shared/stickman';
+import { distinctColorCount, hitTest, initialStickman } from 'shared/stickman';
 
 export interface Scheduler {
   setTimeout(fn: () => void, ms: number): unknown;
@@ -407,11 +407,15 @@ export class RoomEngine {
     room.endsAt = Date.now() + SEEK_MS;
     room.seekTimer = this.scheduler.setTimeout(() => this.onSeekExpire(room.code), SEEK_MS);
 
-    const stickmen: SeekStickman[] = [...room.hiderIds].map((id) => ({
-      playerId: id,
-      nickname: room.players.find((p) => p.id === id)!.nickname,
-      stickman: room.stickmen.get(id)!,
-    }));
+    const stickmen: SeekStickman[] = [...room.hiderIds].map((id) => {
+      const stickman = room.stickmen.get(id)!;
+      return {
+        playerId: id,
+        nickname: room.players.find((p) => p.id === id)!.nickname,
+        stickman,
+        colorCount: distinctColorCount(stickman.strokes),
+      };
+    });
     this.emit('all', 'phase:seek', {
       background: room.background!,
       stickmen,

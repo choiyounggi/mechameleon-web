@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { INITIAL_FEET_Y, hitTest, initialStickman } from '../src/stickman';
+import { INITIAL_FEET_Y, distinctColorCount, hitTest, initialStickman, outlineAlpha } from '../src/stickman';
 import { zNickname, zStickmanState } from '../src/protocol';
+import type { StickmanStroke } from '../src/protocol';
 
 const baseColors = {
   head: '#ff0000',
@@ -101,6 +102,74 @@ describe('zStickmanState strokes (brush model)', () => {
     }));
     const total = zStickmanState.safeParse({ ...base, strokes });
     expect(total.success).toBe(false); // 8 * 501 > MAX_TOTAL_POINTS = 4000
+  });
+});
+
+function stroke(color: string): StickmanStroke {
+  return { color, size: 10, points: [{ x: 0, y: 0 }] };
+}
+
+describe('distinctColorCount', () => {
+  it('counts 0 for no strokes (boundary case)', () => {
+    expect(distinctColorCount([])).toBe(0);
+  });
+
+  it('counts 1 when every stroke shares the same color (normal case)', () => {
+    expect(distinctColorCount([stroke('#ff0000'), stroke('#ff0000'), stroke('#ff0000')])).toBe(1);
+  });
+
+  it('normalizes hex case before comparing (boundary case: case-insensitive)', () => {
+    expect(distinctColorCount([stroke('#FF0000'), stroke('#ff0000')])).toBe(1);
+  });
+
+  it('counts each distinct color once (normal case)', () => {
+    const strokes = ['#ff0000', '#00ff00', '#0000ff', '#ffff00'].map(stroke);
+    expect(distinctColorCount(strokes)).toBe(4);
+  });
+});
+
+describe('outlineAlpha', () => {
+  it('is always 1 for a single-color hider, regardless of time left (normal case)', () => {
+    expect(outlineAlpha(1, 120_000)).toBe(1);
+    expect(outlineAlpha(1, 0)).toBe(1);
+  });
+
+  it('is always 1 for zero colors (boundary case)', () => {
+    expect(outlineAlpha(0, 120_000)).toBe(1);
+  });
+
+  it('is 0 for a 2-color hider before the 60s reveal window (boundary case)', () => {
+    expect(outlineAlpha(2, 60_000)).toBe(0);
+    expect(outlineAlpha(2, 60_001)).toBe(0);
+  });
+
+  it('fades linearly to 0.5 at the midpoint of the 2-color reveal window (normal case)', () => {
+    expect(outlineAlpha(2, 30_000)).toBe(0.5);
+  });
+
+  it('reaches 1 as remaining time hits 0 for a 2-color hider (boundary case)', () => {
+    expect(outlineAlpha(2, 0)).toBe(1);
+  });
+
+  it('clamps to 1 when remaining time is negative (error/extreme input)', () => {
+    expect(outlineAlpha(2, -5)).toBe(1);
+  });
+
+  it('is 0 for a 3-color hider before the 30s reveal window (boundary case)', () => {
+    expect(outlineAlpha(3, 30_000)).toBe(0);
+  });
+
+  it('fades linearly to 0.5 at the midpoint of the 3-color reveal window (normal case)', () => {
+    expect(outlineAlpha(3, 15_000)).toBe(0.5);
+  });
+
+  it('is always 0 for 4 or more colors (normal case)', () => {
+    expect(outlineAlpha(4, 0)).toBe(0);
+    expect(outlineAlpha(5, 100)).toBe(0);
+  });
+
+  it('treats a non-integer colorCount as <=1 (error/extreme input)', () => {
+    expect(outlineAlpha(2.5, 100_000)).toBe(1);
   });
 });
 

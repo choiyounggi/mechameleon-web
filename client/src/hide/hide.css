@@ -85,6 +85,15 @@
   text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
 }
 
+/* D9: current zoom multiplier ("x2.5"), shown only while zoomed in past 1x */
+.mc-hide-key__zoom {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-paint-green);
+  text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
+}
+
 /* top-right: paint swatch + confirm button + error (D4, D5) */
 .mc-hide-actions {
   position: absolute;
@@ -124,6 +133,49 @@
  * at higher specificity so the empty error pill actually disappears. */
 .mc-hide-actions .mc-error[hidden] {
   display: none;
+}
+
+/* D3 (t4): pre-confirm color-mixing nudge — separate pill from .mc-error, tone
+ * driven by [data-level] so the hider always sees the current outline risk;
+ * confirming stays possible at any color count (no blocking here). */
+.mc-hide-nudge {
+  display: inline-block;
+  color: var(--color-ink-strong);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-align: right;
+}
+
+.mc-hide-nudge[data-level='danger'] {
+  background: var(--color-danger);
+  animation: mc-nudge-pulse 1200ms var(--ease-out) infinite;
+}
+
+.mc-hide-nudge[data-level='warn'] {
+  background: var(--color-hint);
+}
+
+.mc-hide-nudge[data-level='info'] {
+  background: var(--color-paint-cyan);
+}
+
+.mc-hide-nudge[data-level='safe'] {
+  background: var(--color-go);
+}
+
+@keyframes mc-nudge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.05);
+  }
 }
 
 /* ==== wait screen: themed seeker hold (D6) ==== */

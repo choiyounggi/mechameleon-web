@@ -1,4 +1,5 @@
 import { LOCKOUT_MS, type SeekClickAck, type StickmanState, type Winner } from 'shared/protocol';
+import { outlineAlpha } from 'shared/stickman';
 
 // Shape of the 'game:end' server payload (shared/protocol.ts ServerToClientEvents),
 // named locally since the protocol only inlines it on the event map (D8).
@@ -52,6 +53,20 @@ export function resolveResultText(end: SeekEndPayload | null): string {
 // context makes the actual draw call unobservable in a mounted-screen test.
 export function seekBodyStyle(playerId: string, foundIds: ReadonlySet<string>): 'seek' | undefined {
   return foundIds.has(playerId) ? undefined : 'seek';
+}
+
+// D3: outline alpha for a hider's stickman in the seek overlay -- found
+// hiders are always fully outlined (seekBodyStyle already switches them to
+// 'edit', which ignores this value); unfound hiders defer entirely to
+// shared's outlineAlpha so the reveal schedule has a single source of truth.
+export function hiderOutlineAlpha(
+  playerId: string,
+  foundIds: ReadonlySet<string>,
+  colorCount: number,
+  remainingMs: number,
+): number {
+  if (foundIds.has(playerId)) return 1;
+  return outlineAlpha(colorCount, remainingMs);
 }
 
 // D8: result-screen highlight ring radius, a 1.2s-period sinusoidal pulse
