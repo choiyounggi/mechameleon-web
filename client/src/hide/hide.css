@@ -210,3 +210,8 @@
 .mc-wait-msg--swap {
   animation: mc-pop-in 260ms var(--ease-out);
 }
+
+/* Keep the leave button clear of the big countdown digits above it. */
+.mc-hide-wait .mc-btn {
+  margin-top: var(--space-lg);
+}
