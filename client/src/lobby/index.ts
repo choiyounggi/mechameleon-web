@@ -250,6 +250,11 @@ export function createLobbyController(): PhaseController {
             playing.className = 'mc-chip mc-chip--playing';
             playing.textContent = '게임 중';
             card.appendChild(playing);
+          } else {
+            const waiting = document.createElement('span');
+            waiting.className = 'mc-chip mc-chip--waiting';
+            waiting.textContent = '대기 중';
+            card.appendChild(waiting);
           }
 
           card.addEventListener('click', () => {
@@ -476,7 +481,7 @@ export function createLobbyController(): PhaseController {
 
         const startBtn = document.createElement('button');
         startBtn.type = 'button';
-        startBtn.className = 'mc-btn mc-btn--green';
+        startBtn.className = 'mc-btn mc-btn--start';
         startBtn.textContent = '시작';
         const canStart = host && room.players.length >= MIN_PLAYERS && room.background !== null;
         startBtn.disabled = !canStart;
@@ -532,8 +537,7 @@ export function createLobbyController(): PhaseController {
         const preview = document.createElement('img');
         preview.src = background.imageUrl;
         preview.alt = '배경 미리보기';
-        preview.style.maxWidth = '100%';
-        preview.style.borderRadius = '10px';
+        preview.className = 'mc-capture-preview';
         const dims = document.createElement('span');
         dims.textContent = `${background.width}×${background.height}`;
         wrap.append(preview, dims);
@@ -550,7 +554,7 @@ export function createLobbyController(): PhaseController {
         if (host) {
           const minusBtn = document.createElement('button');
           minusBtn.type = 'button';
-          minusBtn.className = 'mc-btn mc-btn--ghost mc-hider-count__btn';
+          minusBtn.className = 'mc-btn mc-btn--red mc-hider-count__btn';
           minusBtn.textContent = '−';
           minusBtn.setAttribute('aria-label', '숨는 사람 수 줄이기');
           minusBtn.disabled = n < 2 || display <= 1;
@@ -570,7 +574,7 @@ export function createLobbyController(): PhaseController {
         if (host) {
           const plusBtn = document.createElement('button');
           plusBtn.type = 'button';
-          plusBtn.className = 'mc-btn mc-btn--ghost mc-hider-count__btn';
+          plusBtn.className = 'mc-btn mc-btn--green mc-hider-count__btn';
           plusBtn.textContent = '+';
           plusBtn.setAttribute('aria-label', '숨는 사람 수 늘리기');
           plusBtn.disabled = n < 2 || display >= max;

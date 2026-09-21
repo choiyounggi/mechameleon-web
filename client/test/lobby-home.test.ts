@@ -139,3 +139,60 @@ describe('lobby home — title stamp', () => {
     ctrl.unmount();
   });
 });
+
+describe('lobby home — room list status pill', () => {
+  it('shows a mint 대기 중 pill on a lobby-phase room and a red 게임 중 pill on a non-lobby room in the same list (normal)', async () => {
+    const net: MockNet = {
+      rooms: [summary({ code: 'WAITNG', phase: 'lobby' }), summary({ code: 'INGAME', phase: 'seek' })],
+      joinAck: { ok: false, code: 'ROOM_NOT_FOUND' },
+      joinCalls: [],
+    };
+    const ctx = makeCtx(net);
+    const root = document.createElement('div');
+    const ctrl = createLobbyController();
+    ctrl.mount(root, ctx);
+    await flush();
+
+    const cards = root.querySelectorAll<HTMLButtonElement>('.mc-room-card');
+    expect(cards).toHaveLength(2);
+    expect(cards[0].querySelector('.mc-chip--waiting')?.textContent).toBe('대기 중');
+    expect(cards[1].querySelector('.mc-chip--playing')?.textContent).toBe('게임 중');
+    ctrl.unmount();
+  });
+
+  it('never mixes the two status texts onto one card (negative: mutual exclusivity)', async () => {
+    const net: MockNet = {
+      rooms: [summary({ code: 'WAITNG', phase: 'lobby' }), summary({ code: 'INGAME', phase: 'seek' })],
+      joinAck: { ok: false, code: 'ROOM_NOT_FOUND' },
+      joinCalls: [],
+    };
+    const ctx = makeCtx(net);
+    const root = document.createElement('div');
+    const ctrl = createLobbyController();
+    ctrl.mount(root, ctx);
+    await flush();
+
+    const cards = root.querySelectorAll<HTMLButtonElement>('.mc-room-card');
+    expect(cards[0].textContent).not.toContain('게임 중');
+    expect(cards[1].textContent).not.toContain('대기 중');
+    ctrl.unmount();
+  });
+
+  it('shows both the lock chip and the waiting pill on a private, lobby-phase room (boundary)', async () => {
+    const net: MockNet = {
+      rooms: [summary({ code: 'PRIVAT', name: '비밀방', isPrivate: true, phase: 'lobby' })],
+      joinAck: { ok: false, code: 'ROOM_NOT_FOUND' },
+      joinCalls: [],
+    };
+    const ctx = makeCtx(net);
+    const root = document.createElement('div');
+    const ctrl = createLobbyController();
+    ctrl.mount(root, ctx);
+    await flush();
+
+    const card = root.querySelector<HTMLButtonElement>('.mc-room-card')!;
+    expect(card.querySelector('.mc-chip--locked')?.textContent).toBe('🔒 비공개');
+    expect(card.querySelector('.mc-chip--waiting')?.textContent).toBe('대기 중');
+    ctrl.unmount();
+  });
+});
