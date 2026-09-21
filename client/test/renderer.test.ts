@@ -3,7 +3,7 @@
 // draw-order test below (legs -> arms -> torso -> head) is the substitute
 // error-bucket case: it is the one contract that would silently regress
 // (a skipped/reordered/double-drawn part) without throwing.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StickmanState } from 'shared/protocol';
 import { drawStickman, segmentEndpoints } from '../src/render/stickman-renderer';
 
@@ -187,5 +187,63 @@ describe('drawStickman outline alpha (D1): seek-style fade-in via the 4th arg', 
     const { ctx, ops } = createMockCtx();
     drawStickman(ctx, makeStickman(), 'edit', 0);
     expect(ops.some((op) => op.startsWith('fill:#3b332b:1'))).toBe(true);
+  });
+});
+
+describe('token resolution (D1/D2): body fill/outline resolve through canvasToken, once, not per frame', () => {
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--color-ink');
+    document.documentElement.style.removeProperty('--color-ink-strong');
+  });
+
+  it('resolves the body fill and outline from --color-ink/--color-ink-strong when both tokens are set (normal)', async () => {
+    document.documentElement.style.setProperty('--color-ink', 'oklch(70% 0.05 200)');
+    document.documentElement.style.setProperty('--color-ink-strong', 'oklch(20% 0.05 260)');
+    vi.resetModules();
+    const mod = await import('../src/render/stickman-renderer');
+    const { ctx, ops } = createMockCtx();
+    mod.drawStickman(ctx, makeStickman());
+    const fills = ops.filter((op) => op.startsWith('fill:') || op.startsWith('stroke:'));
+    expect(fills.some((op) => op.includes('oklch(20% 0.05 260)'))).toBe(true);
+    expect(fills.some((op) => op.includes('oklch(70% 0.05 200)'))).toBe(true);
+    // each token drives its own pass: --color-ink-strong the outline pass
+    // (painted first), --color-ink the base body pass (painted last)
+    expect(fills[0]).toContain('oklch(20% 0.05 260)');
+    expect(fills[0]).not.toContain('oklch(70% 0.05 200)');
+    expect(fills[fills.length - 1]).toContain('oklch(70% 0.05 200)');
+    expect(fills[fills.length - 1]).not.toContain('oklch(20% 0.05 260)');
+  });
+
+  it('falls back to the exact hand-copied literals when --color-ink/--color-ink-strong are self-referential cycles (error: malformed token value)', async () => {
+    document.documentElement.style.setProperty('--color-ink', 'var(--color-ink)');
+    document.documentElement.style.setProperty('--color-ink-strong', 'var(--color-ink-strong)');
+    vi.resetModules();
+    const mod = await import('../src/render/stickman-renderer');
+    const { ctx, ops } = createMockCtx();
+    mod.drawStickman(ctx, makeStickman());
+    const fills = ops.filter((op) => op.startsWith('fill:') || op.startsWith('stroke:'));
+    expect(fills.some((op) => op.includes('#3b332b'))).toBe(true);
+    expect(fills.some((op) => op.includes('#ffffff'))).toBe(true);
+  });
+
+  it('resolves both colours once and reuses the cached value on a later drawStickman call even after the CSS properties change (boundary: memoization, never per frame)', async () => {
+    document.documentElement.style.setProperty('--color-ink', 'oklch(70% 0.05 200)');
+    document.documentElement.style.setProperty('--color-ink-strong', 'oklch(20% 0.05 260)');
+    vi.resetModules();
+    const mod = await import('../src/render/stickman-renderer');
+    const { ctx: ctx1, ops: ops1 } = createMockCtx();
+    mod.drawStickman(ctx1, makeStickman());
+    expect(ops1.some((op) => op.includes('oklch(20% 0.05 260)'))).toBe(true);
+    expect(ops1.some((op) => op.includes('oklch(70% 0.05 200)'))).toBe(true);
+
+    document.documentElement.style.setProperty('--color-ink', 'oklch(40% 0.05 10)');
+    document.documentElement.style.setProperty('--color-ink-strong', 'oklch(90% 0.05 10)');
+    const { ctx: ctx2, ops: ops2 } = createMockCtx();
+    mod.drawStickman(ctx2, makeStickman());
+    expect(ops2.some((op) => op.includes('oklch(20% 0.05 260)'))).toBe(true);
+    expect(ops2.some((op) => op.includes('oklch(90% 0.05 10)'))).toBe(false);
+    // the base body fill is memoized too, not just the outline
+    expect(ops2.some((op) => op.includes('oklch(70% 0.05 200)'))).toBe(true);
+    expect(ops2.some((op) => op.includes('oklch(40% 0.05 10)'))).toBe(false);
   });
 });

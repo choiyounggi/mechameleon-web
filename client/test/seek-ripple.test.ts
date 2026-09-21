@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createRippleStore, drawRipples, RIPPLE_LIFETIME_MS } from '../src/seek/ripple';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRippleStore, drawRipples, resolveRippleStrokes, RIPPLE_LIFETIME_MS } from '../src/seek/ripple';
 
 function makeFakeCtx() {
   return {
@@ -69,5 +69,61 @@ describe('drawRipples (D3): two-layer paint ring render helper', () => {
     drawRipples(ctx, []);
 
     expect(ctx.stroke).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveRippleStrokes / drawRipples token resolution (D4): ring colours resolve through tokens, once, not per frame', () => {
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--color-paint-red');
+    document.documentElement.style.removeProperty('--color-paint-yellow');
+  });
+
+  it('resolveRippleStrokes returns the open (unclosed) paint-red/paint-yellow token values when both are set (normal)', () => {
+    document.documentElement.style.setProperty('--color-paint-red', 'oklch(50% 0.2 30)');
+    document.documentElement.style.setProperty('--color-paint-yellow', 'oklch(60% 0.2 90)');
+
+    const strokes = resolveRippleStrokes();
+
+    expect(strokes.outer).toBe('oklch(50% 0.2 30');
+    expect(strokes.inner).toBe('oklch(60% 0.2 90');
+  });
+
+  it('resolveRippleStrokes falls back to the exact current open oklch literals when the tokens are unset (boundary: property never set)', () => {
+    const strokes = resolveRippleStrokes();
+
+    expect(strokes.outer).toBe('oklch(65% 0.21 25');
+    expect(strokes.inner).toBe('oklch(86% 0.15 95');
+  });
+
+  it('resolveRippleStrokes falls back to the fixed literal when --color-paint-red is a self-referential cycle (error: malformed token value)', () => {
+    document.documentElement.style.setProperty('--color-paint-red', 'var(--color-paint-red)');
+
+    const strokes = resolveRippleStrokes();
+
+    expect(strokes.outer).toBe('oklch(65% 0.21 25');
+  });
+
+  it('drawRipples resolves the ring tokens once and reuses the cached value on a later frame even after the CSS property changes (normal: memoization, never per frame)', async () => {
+    document.documentElement.style.setProperty('--color-paint-red', 'oklch(50% 0.2 30)');
+    document.documentElement.style.setProperty('--color-paint-yellow', 'oklch(60% 0.2 90)');
+    vi.resetModules();
+    const mod = await import('../src/seek/ripple');
+    const ctx = makeFakeCtx();
+    // record the strokeStyle in effect at each stroke() so both rings are checked
+    const styles: string[] = [];
+    (ctx.stroke as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      styles.push(ctx.strokeStyle as string);
+    });
+    const ripples = [{ x: 5, y: 6, bornAt: 0, radius: 20, alpha: 0.2 }];
+
+    mod.drawRipples(ctx, ripples);
+    expect(ctx.strokeStyle).toBe('oklch(60% 0.2 90 / 0.2)');
+    expect(styles).toEqual(['oklch(50% 0.2 30 / 0.2)', 'oklch(60% 0.2 90 / 0.2)']);
+
+    document.documentElement.style.setProperty('--color-paint-red', 'oklch(10% 0.2 200)');
+    document.documentElement.style.setProperty('--color-paint-yellow', 'oklch(10% 0.2 200)');
+    mod.drawRipples(ctx, ripples);
+    expect(ctx.strokeStyle).toBe('oklch(60% 0.2 90 / 0.2)');
+    expect(styles.slice(2)).toEqual(['oklch(50% 0.2 30 / 0.2)', 'oklch(60% 0.2 90 / 0.2)']);
   });
 });

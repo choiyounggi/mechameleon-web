@@ -1,5 +1,6 @@
 import type { PartKey, StickmanState } from 'shared/protocol';
 import { SEGMENTS } from 'shared/stickman';
+import { canvasToken } from './canvas-tokens';
 
 export interface SegmentEndpoint {
   part: PartKey;
@@ -27,8 +28,22 @@ export function segmentEndpoints(s: StickmanState): SegmentEndpoint[] {
 // Back-to-front draw order so limbs tuck behind the torso and the head on top.
 const DRAW_ORDER: PartKey[] = ['leftLeg', 'rightLeg', 'leftArm', 'rightArm', 'torso', 'head'];
 
-const BODY_BASE = '#ffffff';
-const BODY_OUTLINE = '#3b332b';
+// D1/D2: the body fill and outline colours resolve through canvasToken instead
+// of hand-copied literals, once (lazily memoized on the first call), never per
+// frame. Fallbacks preserve today's exact literals when no CSS is loaded
+// (jsdom tests; canvasToken's own contract).
+let bodyBaseCache: string | null = null;
+function getBodyBase(): string {
+  if (bodyBaseCache === null) bodyBaseCache = canvasToken('--color-ink', '#ffffff');
+  return bodyBaseCache;
+}
+
+let bodyOutlineCache: string | null = null;
+function getBodyOutline(): string {
+  if (bodyOutlineCache === null) bodyOutlineCache = canvasToken('--color-ink-strong', '#3b332b');
+  return bodyOutlineCache;
+}
+
 const OUTLINE_WIDTH = 2.5;
 
 /** Paints the body silhouette (all capsules + head) onto ctx with the current styles. */
@@ -120,23 +135,23 @@ export function drawStickman(
   ctx.save();
   if (style === 'edit') {
     // 1) outline pass (slightly fatter dark body behind the white fill)
-    ctx.strokeStyle = BODY_OUTLINE;
-    ctx.fillStyle = BODY_OUTLINE;
+    ctx.strokeStyle = getBodyOutline();
+    ctx.fillStyle = getBodyOutline();
     traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
   } else {
     const alpha = Math.max(0, Math.min(1, outlineAlphaValue ?? 0));
     if (alpha > 0) {
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = BODY_OUTLINE;
-      ctx.fillStyle = BODY_OUTLINE;
+      ctx.strokeStyle = getBodyOutline();
+      ctx.fillStyle = getBodyOutline();
       traceBody(ctx, s, 'fill', OUTLINE_WIDTH);
       ctx.restore();
     }
   }
   // 2) white base body
-  ctx.strokeStyle = BODY_BASE;
-  ctx.fillStyle = BODY_BASE;
+  ctx.strokeStyle = getBodyBase();
+  ctx.fillStyle = getBodyBase();
   traceBody(ctx, s, 'fill');
   ctx.restore();
 
@@ -155,6 +170,12 @@ export function drawStickman(
   mask.clearRect(0, 0, w, h);
   mask.save();
   mask.globalCompositeOperation = 'source-over';
+  // D3: intentionally NOT token-derived (sweep-exempt) -- the single-shot
+  // clip below reads only this mask's alpha channel, never its hue; a
+  // token-derived value here would risk silently corrupting paint
+  // compositing if a future re-theme of that token ever gained alpha<1,
+  // and this path is unreachable under jsdom (canvas.getContext('2d') is
+  // null there), so no unit test could ever catch such a break.
   mask.strokeStyle = '#000';
   mask.fillStyle = '#000';
   traceBody(mask, s, 'fill');

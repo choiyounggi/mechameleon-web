@@ -5,6 +5,7 @@ import {
   type StickmanState,
   type StickmanStroke,
 } from 'shared/protocol';
+import { canvasToken } from '../render/canvas-tokens';
 
 /** Brush diameter in stickman-local px. */
 export const BRUSH_SIZE = 10;
@@ -13,7 +14,7 @@ export const EYEDROPPER_KEY = 'Alt';
 /** Ignore drag samples closer than this (local px) — keeps point counts sane. */
 const MIN_POINT_DISTANCE = 1.5;
 
-export const DEFAULT_BRUSH_COLOR = '#8a8a8a';
+export const DEFAULT_BRUSH_COLOR = canvasToken('--color-ink-soft', '#8a8a8a');
 
 /** Image-pixel coords -> stickman-local coords (feet-center origin, unscaled). */
 export function imageToLocal(s: StickmanState, imageX: number, imageY: number): { x: number; y: number } {
