@@ -60,6 +60,16 @@ describe('reduced motion', () => {
 
     expect(parent.querySelectorAll('.mc-splat-particle').length).toBe(3);
   });
+
+  it('paintBurst also creates no stain when prefers-reduced-motion is set, same guard as particles (boundary)', () => {
+    stubReducedMotion(true);
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+
+    paintBurst(10, 20, { count: 5, parent });
+
+    expect(parent.querySelectorAll('.mc-splat-stain').length).toBe(0);
+  });
 });
 
 describe('paintBurst', () => {
@@ -173,5 +183,70 @@ describe('attachPressFX', () => {
       detach();
       detach();
     }).not.toThrow();
+  });
+});
+
+describe('paintBurst stain (D11)', () => {
+  it('also leaves one mc-splat-stain mark at the impact point, separate from the mc-splat-particle count (normal)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+
+    paintBurst(10, 20, { count: 4, parent });
+
+    expect(parent.querySelectorAll('.mc-splat-particle').length).toBe(4);
+    expect(parent.querySelectorAll('.mc-splat-stain').length).toBe(1);
+    const stain = parent.querySelector('.mc-splat-stain') as HTMLElement;
+    expect(stain.style.left).toBe('10px');
+    expect(stain.style.top).toBe('20px');
+  });
+
+  it('removes the splat stain once its fade animation ends (normal)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+
+    paintBurst(10, 20, { count: 1, parent });
+    const stain = parent.querySelector('.mc-splat-stain');
+    expect(stain).not.toBeNull();
+    stain!.dispatchEvent(new Event('animationend'));
+
+    expect(parent.querySelectorAll('.mc-splat-stain').length).toBe(0);
+  });
+
+  it('creates no stain when count is zero or negative, same guard as particles (error)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+
+    paintBurst(10, 20, { count: 0, parent });
+    paintBurst(10, 20, { count: -3, parent });
+
+    expect(parent.querySelectorAll('.mc-splat-stain').length).toBe(0);
+  });
+});
+
+describe('paintBurst particle shape variety (D12)', () => {
+  it('alternates a streak-shaped particle onto every odd index among round default particles (normal)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+
+    paintBurst(10, 20, { count: 4, parent });
+
+    expect(parent.querySelectorAll('.mc-splat-particle--streak').length).toBe(2);
+    expect(parent.querySelectorAll('.mc-splat-particle').length).toBe(4);
+    // default sizePx is 10: streaks are elongated (18 x 5), round ones stay 10 x 10.
+    const particles = Array.from(parent.querySelectorAll<HTMLElement>('.mc-splat-particle'));
+    particles.forEach((particle) => {
+      const streak = particle.classList.contains('mc-splat-particle--streak');
+      expect(particle.style.width).toBe(streak ? '18px' : '10px');
+      expect(particle.style.height).toBe(streak ? '5px' : '10px');
+    });
+  });
+
+  it('creates zero streak particles when count is 1 — only the round index-0 default exists (boundary)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+
+    paintBurst(10, 20, { count: 1, parent });
+
+    expect(parent.querySelectorAll('.mc-splat-particle--streak').length).toBe(0);
   });
 });

@@ -13,6 +13,9 @@ const DEFAULT_SHAKE_INTENSITY_PX = 4;
 const DEFAULT_SHAKE_DURATION_MS = 350;
 const PRESS_BURST_COUNT = 5;
 const PRESS_BURST_SIZE = 6;
+const STAIN_SIZE_MULTIPLIER = 2.2;
+const STREAK_WIDTH_MULTIPLIER = 1.8;
+const STREAK_HEIGHT_MULTIPLIER = 0.5;
 
 export interface PaintBurstOptions {
   colors?: string[];
@@ -40,18 +43,47 @@ export function paintBurst(x: number, y: number, opts: PaintBurstOptions = {}): 
   const colors = opts.colors ?? DEFAULT_COLORS;
   const sizePx = opts.sizePx ?? DEFAULT_PARTICLE_SIZE;
 
+  // D11: one lingering paint "stain" per impact, separate from the flying
+  // particles (its own class, never counted by .mc-splat-particle queries).
+  const stainSize = sizePx * STAIN_SIZE_MULTIPLIER;
+  const stain = document.createElement('div');
+  stain.className = 'mc-splat-stain';
+  stain.style.position = 'absolute';
+  stain.style.left = `${x}px`;
+  stain.style.top = `${y}px`;
+  stain.style.width = `${stainSize}px`;
+  stain.style.height = `${stainSize}px`;
+  stain.style.marginLeft = `${-stainSize / 2}px`;
+  stain.style.marginTop = `${-stainSize / 2}px`;
+  stain.style.borderRadius = '50%';
+  stain.style.pointerEvents = 'none';
+  stain.style.background = colors[0 % colors.length];
+  const removeStain = (): void => {
+    stain.remove();
+  };
+  stain.addEventListener('animationend', removeStain, { once: true });
+  setTimeout(removeStain, PARTICLE_REMOVE_TIMEOUT_MS);
+  parent.appendChild(stain);
+
   for (let i = 0; i < count; i += 1) {
     const particle = document.createElement('div');
     particle.className = 'mc-splat-particle';
+    // D12: odd indices render as an elongated streak instead of a round
+    // blob. Shape comes from width/height (never animated by mc-splat's
+    // keyframes), not from a competing CSS transform.
+    const isStreak = i % 2 === 1;
+    if (isStreak) particle.classList.add('mc-splat-particle--streak');
+    const particleWidth = isStreak ? sizePx * STREAK_WIDTH_MULTIPLIER : sizePx;
+    const particleHeight = isStreak ? sizePx * STREAK_HEIGHT_MULTIPLIER : sizePx;
     const angle = (i / count) * Math.PI * 2;
     const distance = sizePx * (1.5 + Math.random());
     particle.style.position = 'absolute';
     particle.style.left = `${x}px`;
     particle.style.top = `${y}px`;
-    particle.style.width = `${sizePx}px`;
-    particle.style.height = `${sizePx}px`;
-    particle.style.marginLeft = `${-sizePx / 2}px`;
-    particle.style.marginTop = `${-sizePx / 2}px`;
+    particle.style.width = `${particleWidth}px`;
+    particle.style.height = `${particleHeight}px`;
+    particle.style.marginLeft = `${-particleWidth / 2}px`;
+    particle.style.marginTop = `${-particleHeight / 2}px`;
     particle.style.borderRadius = '50%';
     particle.style.pointerEvents = 'none';
     particle.style.background = colors[i % colors.length];

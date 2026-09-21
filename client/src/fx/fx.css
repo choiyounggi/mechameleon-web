@@ -1,1 +1,77 @@
 /* contract: t1-foundation creates this stub; t6-motion-fallback owns the content */
+.mc-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-sm);
+  color: var(--color-ink-soft);
+  font-family: var(--font-body);
+}
+
+.mc-fallback-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: var(--border-width-thin) solid var(--color-line);
+  border-top-color: var(--color-accent);
+  animation: mc-fallback-spin 900ms linear infinite;
+}
+
+@keyframes mc-fallback-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mc-phase-fade {
+  animation: mc-phase-fade 220ms var(--ease-out);
+}
+
+@keyframes mc-phase-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mc-phase-wipe {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  transform-origin: left center;
+  background: var(--color-accent);
+  animation: mc-phase-wipe 260ms var(--ease-out) forwards;
+}
+
+@keyframes mc-phase-wipe {
+  0% {
+    transform: scaleX(0);
+    opacity: 0.85;
+  }
+  55% {
+    transform: scaleX(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.mc-splat-stain {
+  animation: mc-splat-stain-fade 700ms ease-out forwards;
+}
+
+@keyframes mc-splat-stain-fade {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
