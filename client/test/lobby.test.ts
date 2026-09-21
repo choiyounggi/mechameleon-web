@@ -647,3 +647,166 @@ describe('lobby hider count', () => {
     controller.unmount();
   });
 });
+
+describe('lobby hider count — stepper colors', () => {
+  it('gives the minus button mc-btn--red and the plus button mc-btn--green, both keeping mc-hider-count__btn (normal)', () => {
+    const room = fourPlayerRoom({ hiderCount: null });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const minusBtn = root.querySelector<HTMLButtonElement>(MINUS_LABEL)!;
+    const plusBtn = root.querySelector<HTMLButtonElement>(PLUS_LABEL)!;
+    expect(minusBtn.className).toContain('mc-btn--red');
+    expect(minusBtn.className).toContain('mc-hider-count__btn');
+    expect(plusBtn.className).toContain('mc-btn--green');
+    expect(plusBtn.className).toContain('mc-hider-count__btn');
+
+    controller.unmount();
+  });
+
+  it('keeps the red/green classes on both buttons even when disabled in a 2-player room (boundary)', () => {
+    const room = makeRoom({
+      players: [
+        { id: 'host-1', nickname: 'host', isHost: true },
+        { id: 'g1', nickname: 'a', isHost: false },
+      ],
+      hiderCount: null,
+    });
+    const ctx = makeHostCtx(room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const minusBtn = root.querySelector<HTMLButtonElement>(MINUS_LABEL)!;
+    const plusBtn = root.querySelector<HTMLButtonElement>(PLUS_LABEL)!;
+    expect(minusBtn.disabled).toBe(true);
+    expect(plusBtn.disabled).toBe(true);
+    expect(minusBtn.className).toContain('mc-btn--red');
+    expect(plusBtn.className).toContain('mc-btn--green');
+
+    controller.unmount();
+  });
+
+  it('renders no .mc-hider-count__btn element for a non-host (negative)', () => {
+    const room = fourPlayerRoom({ hiderCount: null });
+    const ctx = makeCtxAs('g1', room);
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    expect(root.querySelectorAll('.mc-hider-count__btn')).toHaveLength(0);
+
+    controller.unmount();
+  });
+});
+
+describe('lobby capture preview — inline-style migration', () => {
+  it('gives the captured preview img the mc-capture-preview class and no inline style attribute (normal)', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, { imageUrl: '/api/screenshots/abc.png', width: 1440, height: 900 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const room = makeRoom();
+    const ctx = makeHostCtx(room);
+    (ctx.socket.emit as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, req: unknown, ack?: (res: unknown) => void) => {
+        if (event === 'room:setBackground' && typeof ack === 'function') ack({ ok: true });
+      },
+    );
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+    controller.mount(root, ctx);
+
+    const captureBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '가져오기')!;
+    captureBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const preview = root.querySelector<HTMLImageElement>('img[alt="배경 미리보기"]')!;
+    expect(preview.className).toBe('mc-capture-preview');
+    expect(preview.getAttribute('style')).toBeNull();
+
+    controller.unmount();
+    vi.unstubAllGlobals();
+  });
+
+  it('never sets preview.style.maxWidth or borderRadius even though the legacy inline-style code path is gone (negative)', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, { imageUrl: '/api/screenshots/abc.png', width: 1440, height: 900 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const room = makeRoom();
+    const ctx = makeHostCtx(room);
+    (ctx.socket.emit as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, req: unknown, ack?: (res: unknown) => void) => {
+        if (event === 'room:setBackground' && typeof ack === 'function') ack({ ok: true });
+      },
+    );
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+    controller.mount(root, ctx);
+
+    const captureBtn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === '가져오기')!;
+    captureBtn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const preview = root.querySelector<HTMLImageElement>('img[alt="배경 미리보기"]')!;
+    expect(preview.style.maxWidth).toBe('');
+    expect(preview.style.borderRadius).toBe('');
+
+    controller.unmount();
+    vi.unstubAllGlobals();
+  });
+
+  it('gives the preserved idle-fallback preview (room.background already set, no capture click) the same class and no inline style (boundary)', () => {
+    const preserved = { imageUrl: '/api/screenshots/preserved.png', width: 1440, height: 900 };
+    const ctx = makeHostCtx(makeRoom({ background: preserved }));
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const preview = root.querySelector<HTMLImageElement>('img[alt="배경 미리보기"]')!;
+    expect(preview.className).toBe('mc-capture-preview');
+    expect(preview.getAttribute('style')).toBeNull();
+
+    controller.unmount();
+  });
+});
+
+describe('lobby start button — CTA class', () => {
+  it('renders the start button as mc-btn--start (full-width dark bar), not the filled mc-btn--green (normal)', () => {
+    const ctx = makeCtxAs('host-1', makeRoom({ background: { imageUrl: '/api/screenshots/x.png', width: 1440, height: 900 } }));
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const startBtn = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '시작')!;
+    expect(startBtn.className).toBe('mc-btn mc-btn--start');
+    expect(startBtn.disabled).toBe(false);
+
+    controller.unmount();
+  });
+
+  it('keeps the same mc-btn--start class on the start button while it is disabled for a non-host (boundary)', () => {
+    const ctx = makeCtxAs('guest-1', makeRoom());
+    const controller = createLobbyController();
+    const root = document.createElement('div');
+
+    controller.mount(root, ctx);
+
+    const startBtn = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '시작')!;
+    expect(startBtn.disabled).toBe(true);
+    expect(startBtn.className).toContain('mc-btn--start');
+    expect(startBtn.className).not.toContain('mc-btn--green');
+
+    controller.unmount();
+  });
+});
