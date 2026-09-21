@@ -444,6 +444,76 @@ describe('seek controller: multi-hider rendering (D3, D4)', () => {
 
     expect(ctx.socket.off).toHaveBeenCalledWith('seek:found', onSeekFound);
   });
+
+  it('shows the remaining-hiders count as the giant numeral, with the existing label above it (normal: D3 revised)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [
+        { playerId: 'h1', nickname: '숨은이1', stickman: STICKMAN, found: false },
+        { playerId: 'h2', nickname: '숨은이2', stickman: STICKMAN, found: false },
+      ],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+
+    getPhase('seek').mount(root, ctx);
+
+    const group = root.querySelector('.mc-seek-remain-group');
+    expect(group).not.toBeNull();
+    expect(group!.querySelector('.mc-seek-remaining')!.textContent).toBe('남은 카멜레온 2');
+    expect(group!.querySelector('.mc-hud-num.mc-seek-remain')!.textContent).toBe('2');
+
+    getPhase('seek').unmount();
+  });
+
+  it('updates both the label and the giant numeral in lockstep on seek:found (normal: D3 revised)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [
+        { playerId: 'h1', nickname: '숨은이1', stickman: STICKMAN, found: false },
+        { playerId: 'h2', nickname: '숨은이2', stickman: STICKMAN, found: false },
+      ],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+
+    handlers.get('seek:found')!({ playerId: 'h1', nickname: '숨은이1', by: 'me', remaining: 1 });
+
+    expect(root.querySelector('.mc-seek-remaining')?.textContent).toBe('남은 카멜레온 1');
+    expect(root.querySelector('.mc-hud-num.mc-seek-remain')?.textContent).toBe('1');
+
+    getPhase('seek').unmount();
+  });
+
+  it('keeps the giant numeral on the hider count through timer ticks and shows 0 once the last hider is found (boundary: count 0, never re-derived from the clock)', () => {
+    const { ctx, handlers } = makeCtx('seeker');
+    initSeek(ctx);
+    handlers.get('phase:seek')!({
+      background: { imageUrl: '/bg.png', width: 800, height: 600 },
+      stickmen: [{ playerId: 'h1', nickname: '숨은이1', stickman: STICKMAN, found: false }],
+      endsAt: NOW + 60_000,
+    });
+    const root = document.createElement('div');
+    getPhase('seek').mount(root, ctx);
+    const numeral = root.querySelector('.mc-hud-num.mc-seek-remain')!;
+    expect(numeral.textContent).toBe('1');
+
+    // the 500ms tick used to overwrite this element with the seconds left (60);
+    // the count must survive it untouched.
+    vi.advanceTimersByTime(1000);
+    expect(numeral.textContent).toBe('1');
+
+    handlers.get('seek:found')!({ playerId: 'h1', nickname: '숨은이1', by: 'me', remaining: 0 });
+    expect(numeral.textContent).toBe('0');
+    expect(root.querySelector('.mc-seek-remaining')?.textContent).toBe('남은 카멜레온 0');
+
+    getPhase('seek').unmount();
+  });
 });
 
 describe('seek controller: leave button (D4/D5/D7)', () => {

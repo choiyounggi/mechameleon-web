@@ -77,7 +77,7 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const isSeeker = ctx.state.role !== 'hider';
   const foundIds = new Set<string>();
 
-  // D1: top-center HUD -- hourglass + mm:ss timer + phase label (spectator branch).
+  // D10: top-center HUD -- hourglass + mm:ss timer + phase label (spectator branch).
   const hud = document.createElement('div');
   hud.className = 'mc-seek-hud';
   const timerEl = document.createElement('span');
@@ -85,22 +85,28 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const hudLabel = document.createElement('span');
   hudLabel.className = 'mc-hud-label';
   hudLabel.textContent = isSeeker ? '찾아라!' : '관전 중';
-  // D4: remaining-hiders readout, updated from seek:found's server-truth count.
-  const remainingHidersEl = document.createElement('span');
-  remainingHidersEl.className = 'mc-hud-label mc-seek-remaining';
-  remainingHidersEl.textContent = `남은 카멜레온 ${stickmen.length}`;
   const leaveBtn = document.createElement('button');
   leaveBtn.type = 'button';
-  hud.append(createHourglassIcon(), timerEl, hudLabel, remainingHidersEl, leaveBtn);
+  hud.append(createHourglassIcon(), timerEl, hudLabel, leaveBtn);
   root.appendChild(hud);
 
   const detachLeavePressFX = attachPressFX(leaveBtn);
   const detachLeaveConfirm = attachLeaveConfirm(leaveBtn, () => void ctx.leaveToHome?.());
 
-  // D1: bottom-right oversized remaining-seconds readout (.mc-hud-num contract).
+  // D3: bottom-right giant remaining-HIDERS numeral, with the existing
+  // '남은 카멜레온 N' label (unchanged class/copy) sitting above it as the
+  // "small label" -- both driven by the same count, updated from
+  // seek:found's server-truth `remaining` field.
+  const remainGroup = document.createElement('div');
+  remainGroup.className = 'mc-seek-remain-group';
+  const remainingHidersEl = document.createElement('span');
+  remainingHidersEl.className = 'mc-hud-label mc-seek-remaining';
+  remainingHidersEl.textContent = `남은 카멜레온 ${stickmen.length}`;
   const remainEl = document.createElement('div');
   remainEl.className = 'mc-hud-num mc-seek-remain';
-  root.appendChild(remainEl);
+  remainEl.textContent = String(stickmen.length);
+  remainGroup.append(remainingHidersEl, remainEl);
+  root.appendChild(remainGroup);
 
   // D2: bottom-left lockout chip -- a red-tinted .mc-keycap, hidden when not locked.
   const lockoutEl = document.createElement('div');
@@ -197,6 +203,7 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     if (found) triggerFoundBurst(found.stickman.x, found.stickman.y);
     redrawOverlay(rippleStore.active(Date.now()));
     remainingHidersEl.textContent = `남은 카멜레온 ${remaining}`;
+    remainEl.textContent = String(remaining);
   }
   ctx.socket.on('seek:found', onSeekFound);
 
@@ -235,7 +242,6 @@ function mountSeekScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   function tick(): void {
     const ms = remainingMs(endsAt, Date.now());
     timerEl.textContent = formatRemaining(ms);
-    remainEl.textContent = String(Math.ceil(ms / 1000));
     renderBadge();
     // D3: redraw here (not a separate rAF loop) so the outline fade advances
     // on the existing 500ms tick cadence.

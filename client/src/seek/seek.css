@@ -9,6 +9,7 @@
   transform: translateX(-50%);
   z-index: 5;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--space-xs);
   text-shadow: 0 1px 3px oklch(0% 0 0 / 0.5);
@@ -19,14 +20,19 @@
    underneath), but the leave button inside it must stay clickable */
 .mc-seek-hud .mc-btn {
   pointer-events: auto;
+  margin-top: var(--space-xs);
 }
 
 .mc-seek-hud-timer {
   font-family: var(--font-numeral);
   font-weight: 700;
-  font-size: 22px;
+  font-size: 40px;
   color: var(--color-ink);
   font-variant-numeric: tabular-nums;
+}
+
+.mc-seek-remaining {
+  white-space: nowrap;
 }
 
 .mc-seek-hourglass-frame {
@@ -39,12 +45,21 @@
   fill: var(--color-danger);
 }
 
-.mc-seek-remain {
+.mc-seek-hourglass {
+  filter: drop-shadow(0 1px 2px var(--color-shadow));
+  flex-shrink: 0;
+}
+
+.mc-seek-remain-group {
   position: fixed;
   right: var(--space-md);
   bottom: var(--space-md);
   z-index: 5;
   pointer-events: none;
+  text-align: right;
+}
+
+.mc-seek-remain {
   /* r1 (non-blocking): stack a tighter dark shadow under .mc-hud-num's own,
      so the number stays legible over a light patch of the captured photo. */
   text-shadow:
@@ -79,12 +94,25 @@
 .mc-result-banner {
   text-align: center;
   padding: var(--space-lg) var(--space-md) var(--space-sm);
-  font-size: clamp(28px, 6vw, 56px);
+  font-size: clamp(36px, 8vw, 72px);
 }
 
 .mc-result-banner .mc-title-paint span {
   animation: mc-pop-in 420ms var(--ease-out) both;
   animation-delay: var(--mc-pop-delay, 0ms);
+}
+
+.mc-result-banner .mc-title-paint {
+  font-weight: 700;
+}
+
+.mc-result-banner .mc-title-paint span:nth-child(6n + 1),
+.mc-result-banner .mc-title-paint span:nth-child(6n + 2),
+.mc-result-banner .mc-title-paint span:nth-child(6n + 3),
+.mc-result-banner .mc-title-paint span:nth-child(6n + 4),
+.mc-result-banner .mc-title-paint span:nth-child(6n + 5),
+.mc-result-banner .mc-title-paint span:nth-child(6n + 6) {
+  color: var(--color-ink);
 }
 
 .mc-result-banner--found .mc-title-paint {
@@ -98,11 +126,35 @@
 .mc-result-stage {
   margin: 0 auto var(--space-md);
   width: fit-content;
-  border: 2.5px solid var(--color-ink-strong);
-  border-radius: 12px;
-  box-shadow: 0 5px 0 var(--color-ink-strong);
+  border: var(--border-width-thin) solid var(--color-accent);
+  border-radius: var(--radius-card);
   overflow: hidden;
   line-height: 0;
+}
+
+.mc-result-pedestal {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 auto var(--space-md);
+  width: fit-content;
+}
+
+.mc-result-stanchion-post,
+.mc-result-stanchion-finial {
+  fill: var(--color-hint);
+}
+
+.mc-result-stanchion-rope {
+  fill: none;
+  stroke: var(--color-danger);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.mc-result-stanchion--right {
+  transform: scaleX(-1);
 }
 
 .mc-result-buttons {
@@ -120,7 +172,12 @@
 
 .mc-result-return-count {
   text-align: center;
-  padding: 0 var(--space-md) var(--space-sm);
+  padding: var(--space-xs) var(--space-md);
+  margin: 0 auto var(--space-sm);
+  width: fit-content;
+  background: var(--color-card);
+  border: var(--border-width-thin) solid var(--color-ink);
+  border-radius: var(--radius-btn);
 }
 
 @media (prefers-reduced-motion: reduce) {

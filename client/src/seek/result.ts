@@ -2,19 +2,62 @@ import type { Background } from 'shared/protocol';
 import type { AppContext } from '../net';
 import type { PhaseController } from '../phases';
 import { drawStickman } from '../render/stickman-renderer';
+import { canvasTokenOpen, closeAlpha } from '../render/canvas-tokens';
 import { attachPressFX, paintBurst } from '../fx';
 import { getEndPayload } from './index';
 import { resolveResultText, resultPulseRadius, RESULT_PULSE_BASE_RADIUS } from './logic';
 import type { SeekEndPayload } from './logic';
 
-// D6: canvas 2D strokeStyle cannot resolve CSS var() -- fixed local constants
-// mirroring --color-paint-red / --color-paint-green (tokens.css).
-const RING_STROKE = 'oklch(65% 0.21 25 / 0.5)';
-const SURVIVED_RING_STROKE = 'oklch(71% 0.17 145 / 0.5)';
 const RING_LINE_WIDTH = 3;
+
+// D1/D2: ring-stroke colors resolve through the merged canvasToken helpers
+// instead of hand-copied literals -- found stays paint-red, survived stays
+// paint-green (upstream contract), resolved once at mount, not per-frame.
+export function resolveRingStrokes(doc?: Document | null): { found: string; survived: string } {
+  return {
+    found: closeAlpha(canvasTokenOpen('--color-paint-red', 'oklch(67% 0.20 35', doc), 0.5),
+    survived: closeAlpha(canvasTokenOpen('--color-paint-green', 'oklch(82% 0.19 140', doc), 0.5),
+  };
+}
 
 interface CleanupHolder {
   cleanup: (() => void) | null;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// D5: museum-pedestal framing for the result stage -- a brass stanchion
+// post + finial with a drooping velvet rope, mirrored for the right side
+// via the `mirrored` flag (CSS `--right` modifier), inline SVG only.
+function createStanchion(mirrored: boolean): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 40 120');
+  svg.setAttribute('width', '28');
+  svg.setAttribute('height', '96');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('mc-result-stanchion');
+  if (mirrored) svg.classList.add('mc-result-stanchion--right');
+
+  const post = document.createElementNS(SVG_NS, 'rect');
+  post.setAttribute('x', '16');
+  post.setAttribute('y', '20');
+  post.setAttribute('width', '8');
+  post.setAttribute('height', '90');
+  post.setAttribute('rx', '4');
+  post.classList.add('mc-result-stanchion-post');
+
+  const finial = document.createElementNS(SVG_NS, 'circle');
+  finial.setAttribute('cx', '20');
+  finial.setAttribute('cy', '14');
+  finial.setAttribute('r', '12');
+  finial.classList.add('mc-result-stanchion-finial');
+
+  const rope = document.createElementNS(SVG_NS, 'path');
+  rope.setAttribute('d', 'M20 18 Q40 55 20 100');
+  rope.classList.add('mc-result-stanchion-rope');
+
+  svg.append(post, finial, rope);
+  return svg;
 }
 
 function mountHighlightCanvas(
@@ -38,6 +81,7 @@ function mountHighlightCanvas(
   };
   img.src = background.imageUrl;
 
+  const { found: foundStroke, survived: survivedStroke } = resolveRingStrokes();
   const startedAt = Date.now();
   let rafHandle: number | null = null;
   function frame(): void {
@@ -50,7 +94,7 @@ function mountHighlightCanvas(
       for (const s of stickmen) {
         drawStickman(canvasCtx, s.stickman);
         canvasCtx.beginPath();
-        canvasCtx.strokeStyle = s.found ? RING_STROKE : SURVIVED_RING_STROKE;
+        canvasCtx.strokeStyle = s.found ? foundStroke : survivedStroke;
         canvasCtx.lineWidth = RING_LINE_WIDTH;
         canvasCtx.arc(s.stickman.x, s.stickman.y, s.found ? pulseRadius : RESULT_PULSE_BASE_RADIUS, 0, Math.PI * 2);
         canvasCtx.stroke();
@@ -105,9 +149,12 @@ function mountResultScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Cl
   let canvasCleanup: (() => void) | null = null;
   const background = ctx.state.room?.background ?? null;
   if (end?.stickmen.length && background) {
+    const pedestal = document.createElement('div');
+    pedestal.className = 'mc-result-pedestal';
     const stage = document.createElement('div');
     stage.className = 'mc-result-stage';
-    root.appendChild(stage);
+    pedestal.append(createStanchion(false), stage, createStanchion(true));
+    root.appendChild(pedestal);
     canvasCleanup = mountHighlightCanvas(stage, end.stickmen, background);
   }
 

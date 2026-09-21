@@ -3,6 +3,7 @@ import type { AppContext } from '../src/net';
 import type { RoomStatePublic } from 'shared/protocol';
 import { getPhase } from '../src/phases';
 import { initSeek } from '../src/seek';
+import { resolveRingStrokes } from '../src/seek/result';
 
 // D8: fx is a visual side effect, not the result screen's own behavior --
 // stub it so these tests assert result.ts's own decisions, not fx internals
@@ -348,6 +349,84 @@ describe('result controller (D5/D6/D8): game:end -> rendered outcome', () => {
 
     expect(root.querySelector('.mc-result-banner--survived')).not.toBeNull();
     expect(root.querySelector('.mc-result-banner--found')).toBeNull();
+
+    getPhase('result').unmount();
+  });
+});
+
+describe('resolveRingStrokes (D1/D2): ring colours resolve through tokens, not hand-copied literals', () => {
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--color-paint-red');
+    document.documentElement.style.removeProperty('--color-paint-green');
+  });
+
+  it('resolves found/survived strokes from the paint-red/paint-green tokens with alpha 0.5 (normal)', () => {
+    document.documentElement.style.setProperty('--color-paint-red', 'oklch(50% 0.2 30)');
+    document.documentElement.style.setProperty('--color-paint-green', 'oklch(60% 0.2 140)');
+
+    const strokes = resolveRingStrokes();
+
+    expect(strokes.found).toBe('oklch(50% 0.2 30 / 0.5)');
+    expect(strokes.survived).toBe('oklch(60% 0.2 140 / 0.5)');
+  });
+
+  it('falls back to the fixed oklch literals with alpha 0.5 when the tokens are unset (boundary: property never set)', () => {
+    const strokes = resolveRingStrokes();
+
+    expect(strokes.found).toBe('oklch(67% 0.20 35 / 0.5)');
+    expect(strokes.survived).toBe('oklch(82% 0.19 140 / 0.5)');
+  });
+});
+
+describe('result pedestal (D5): museum-exhibit staging around the highlight canvas', () => {
+  it('wraps the stage canvas in a pedestal frame with two stanchions when a highlight canvas renders (normal)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({
+      winner: 'seekers',
+      stickmen: makeStickmen([{ playerId: 'h1', found: true }]),
+      reason: 'all_found',
+    });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    const pedestal = root.querySelector('.mc-result-pedestal');
+    expect(pedestal).not.toBeNull();
+    expect(pedestal!.querySelector('.mc-result-stage')).not.toBeNull();
+    expect(root.querySelectorAll('.mc-result-stanchion').length).toBe(2);
+
+    getPhase('result').unmount();
+  });
+
+  it('renders no pedestal or stanchions when stickmen is empty (boundary)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom());
+    initSeek(ctx);
+    handlers.get('game:end')!({ winner: 'hider', stickmen: [], reason: 'timeout' });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    expect(root.querySelector('.mc-result-pedestal')).toBeNull();
+    expect(root.querySelectorAll('.mc-result-stanchion').length).toBe(0);
+
+    getPhase('result').unmount();
+  });
+
+  it('renders no pedestal when the room has no background even though stickmen exist (error/defensive)', () => {
+    const { ctx, handlers } = makeCtx(makeRoom({ background: null }));
+    initSeek(ctx);
+    handlers.get('game:end')!({
+      winner: 'seekers',
+      stickmen: makeStickmen([{ playerId: 'h1', found: true }]),
+      reason: 'all_found',
+    });
+    const root = document.createElement('div');
+
+    getPhase('result').mount(root, ctx);
+
+    expect(root.querySelector('.mc-result-pedestal')).toBeNull();
+    expect(root.querySelector('canvas')).toBeNull();
 
     getPhase('result').unmount();
   });
