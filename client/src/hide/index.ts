@@ -1,4 +1,5 @@
 import type { StickmanState, StickmanStroke } from 'shared/protocol';
+import { HIDE_MS } from 'shared/protocol';
 import { distinctColorCount } from 'shared/stickman';
 import type { AppContext } from '../net';
 import { createHideUpdateSender, hideConfirm } from '../net';
@@ -41,10 +42,10 @@ interface KeycapSpec {
 // color swap (green -> red) on `.mc-hud-timer` carries through automatically.
 function hourglassSvg(): string {
   return `
-<svg width="22" height="30" viewBox="0 0 22 30" role="img" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <path d="M3 2h16M3 28h16M4 2c0 8 14 8 14 8s-14 0-14 8M18 2c0 8-14 8-14 8s14 0 14 8"
+<svg class="mc-hourglass" width="22" height="30" viewBox="0 0 22 30" role="img" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <path class="mc-hourglass__frame" d="M3 2h16M3 28h16M4 2c0 8 14 8 14 8s-14 0-14 8M18 2c0 8-14 8-14 8s14 0 14 8"
         fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-  <path d="M7 4c0 5 8 5 8 5s-8 0-8 5" fill="currentColor" opacity="0.85"/>
+  <path class="mc-hourglass__liquid" d="M7 4c0 5 8 5 8 5s-8 0-8 5" fill="currentColor" opacity="0.85"/>
 </svg>`;
 }
 
@@ -77,14 +78,20 @@ function mountWaitScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   spinner.className = 'mc-wait-spinner';
   spinner.setAttribute('aria-hidden', 'true');
 
+  const timerWrap = document.createElement('div');
+  timerWrap.className = 'mc-hud-timer mc-hud-timer--wait';
+  timerWrap.insertAdjacentHTML('afterbegin', hourglassSvg());
+  const hourglassLiquid = timerWrap.querySelector<SVGPathElement>('.mc-hourglass__liquid');
+
   const msg = document.createElement('p');
   msg.className = 'mc-hud-label mc-wait-msg';
   msg.textContent = WAIT_MESSAGES[0];
   const timerEl = document.createElement('div');
   timerEl.className = 'mc-hud-num';
+  timerWrap.appendChild(timerEl);
   const leaveBtn = document.createElement('button');
   leaveBtn.type = 'button';
-  wrap.append(spinner, msg, timerEl, leaveBtn);
+  wrap.append(spinner, timerWrap, msg, leaveBtn);
   root.appendChild(wrap);
 
   const detachLeavePressFX = attachPressFX(leaveBtn);
@@ -93,7 +100,12 @@ function mountWaitScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const endsAt = ctx.state.room?.endsAt ?? null;
   function tick(): void {
     if (endsAt === null) return;
-    timerEl.textContent = formatRemaining(remainingMs(endsAt, Date.now()));
+    const remaining = remainingMs(endsAt, Date.now());
+    timerEl.textContent = formatRemaining(remaining);
+    const urgent = remaining <= URGENT_THRESHOLD_MS;
+    timerWrap.classList.toggle('is-urgent', urgent);
+    const fill = Math.max(0, Math.min(1, remaining / HIDE_MS));
+    hourglassLiquid?.style.setProperty('--mc-hourglass-fill', fill.toFixed(3));
   }
   tick();
   const intervalId = window.setInterval(tick, TIMER_TICK_MS);
@@ -142,6 +154,7 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
   const timerWrap = document.createElement('div');
   timerWrap.className = 'mc-hud-timer';
   timerWrap.insertAdjacentHTML('afterbegin', hourglassSvg());
+  const hourglassLiquid = timerWrap.querySelector<SVGPathElement>('.mc-hourglass__liquid');
   const timerEl = document.createElement('span');
   timerEl.className = 'mc-hud-num mc-hud-num--sm';
   const timerLabel = document.createElement('span');
@@ -435,6 +448,8 @@ function mountEditScreen(root: HTMLElement, ctx: AppContext, cleanupHolder: Clea
     timerEl.textContent = formatRemaining(remaining);
     const urgent = remaining <= URGENT_THRESHOLD_MS;
     timerWrap.classList.toggle('is-urgent', urgent);
+    const fill = Math.max(0, Math.min(1, remaining / HIDE_MS));
+    hourglassLiquid?.style.setProperty('--mc-hourglass-fill', fill.toFixed(3));
     if (!urgent) {
       lastShakeSecond = null;
       return;

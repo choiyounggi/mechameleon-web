@@ -51,6 +51,17 @@
   -webkit-text-stroke: 1px oklch(18% 0.02 40 / 0.6);
 }
 
+/* D1: liquid-fill sand — currentColor inherits the is-urgent green/red
+ * swap for free, so no new color logic is needed here (D2). No new
+ * prefers-reduced-motion rule is needed either: style.css's existing
+ * `[class*='mc-']` wildcard already neutralizes this transition (D14). */
+.mc-hourglass__liquid {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  transform: scaleY(var(--mc-hourglass-fill, 1));
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+
 /* bottom-center: control keycap strip (D3) */
 .mc-hide-keys {
   position: absolute;
@@ -104,6 +115,10 @@
   align-items: flex-end;
   gap: var(--space-xs);
   pointer-events: auto;
+  background: var(--color-card);
+  border: var(--border-width-thin) solid var(--color-accent);
+  border-radius: var(--radius-card);
+  padding: var(--space-sm) var(--space-md);
 }
 
 .mc-hide-actions__row {
@@ -112,14 +127,14 @@
   gap: var(--space-sm);
 }
 
-/* D4: paint-drop swatch — asymmetric radius + ink border + bottom edge shadow */
+/* D4/D19: paint-drop swatch — asymmetric radius + thin lime outline (the
+ * stamped ink border + hard offset shadow is retired) */
 .mc-swatch {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
   border-radius: 60% 60% 60% 4% / 60% 60% 40% 40%;
-  border: 2px solid var(--color-ink-strong);
-  box-shadow: 0 3px 0 var(--color-ink-strong);
+  border: var(--border-width-thin) solid var(--color-accent);
   transform: rotate(-8deg);
 }
 
@@ -181,6 +196,8 @@
 /* ==== wait screen: themed seeker hold (D6) ==== */
 
 .mc-hide-wait {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -189,6 +206,37 @@
   gap: var(--space-sm);
   text-align: center;
   animation: mc-pop-in 260ms var(--ease-out);
+}
+
+/* D10: paint-blob set dressing — restrained (2 low-opacity, unblurred,
+ * token-colored circles), grounded in the original game's own "giant
+ * amorphous paint-blob" environment art, not a generic aurora glow. Pure
+ * CSS pseudo-content — no DOM element, so `wrap.style.background` (the
+ * existing test asserts it stays '') is never touched. */
+.mc-hide-wait::before,
+.mc-hide-wait::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.mc-hide-wait::before {
+  width: 160px;
+  height: 160px;
+  top: -40px;
+  left: -40px;
+  background: var(--color-paint-cyan);
+}
+
+.mc-hide-wait::after {
+  width: 200px;
+  height: 200px;
+  bottom: -60px;
+  right: -60px;
+  background: var(--color-paint-violet);
 }
 
 .mc-wait-spinner {
@@ -205,6 +253,36 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* D7/D8: wait-screen timer wrapper — mint default, still red once
+ * is-urgent (the base .mc-hud-timer.is-urgent rule near the top of this
+ * file has higher specificity and always wins over this one-class rule
+ * regardless of file order); position/transform reset so it sits in the
+ * flex column instead of the edit-screen's fixed-HUD absolute layout. */
+.mc-hud-timer--wait {
+  position: static;
+  transform: none;
+  color: var(--color-mint);
+}
+
+.mc-hide-wait .mc-hud-num {
+  color: var(--color-mint);
+}
+
+/* D20: the wait-screen numeral's own urgent color. .mc-hud-num sets an
+ * explicit color (not currentColor), so it never inherits red from
+ * timerWrap, and the edit-screen-only `.mc-hud-timer.is-urgent .mc-hud-num--sm`
+ * rule cannot reach it (this numeral has no --sm class). Specificity:
+ * 3 chained classes = (0,3,0), beats the mint rule above (0,2,0) and the
+ * shared .mc-hud-num primitive (0,1,0) — red wins with no !important. */
+.mc-hud-timer--wait.is-urgent .mc-hud-num {
+  color: var(--color-danger);
+}
+
+/* D9: orphan class — constrain caption width under the hourglass stack */
+.mc-wait-msg {
+  max-width: min(88vw, 360px);
 }
 
 .mc-wait-msg--swap {

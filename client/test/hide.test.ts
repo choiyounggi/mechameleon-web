@@ -259,6 +259,56 @@ describe('hide HUD: timer urgency toggle (D2, D8)', () => {
   });
 });
 
+describe('hide HUD: hourglass liquid fill (D1)', () => {
+  const NOW = Date.parse('2026-01-01T00:00:00Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('drains proportionally to the 60s hide-phase duration (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW + 45_000));
+    const liquid = root.querySelector('.mc-hourglass__liquid') as SVGElement;
+    expect(liquid.style.getPropertyValue('--mc-hourglass-fill')).toBe('0.750');
+    ctrl.unmount();
+  });
+
+  it('clamps the fill at 1.000 at the full duration and past it (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    let ctrl = createHideController();
+    let root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW + 60_000));
+    let liquid = root.querySelector('.mc-hourglass__liquid') as SVGElement;
+    expect(liquid.style.getPropertyValue('--mc-hourglass-fill')).toBe('1.000');
+    ctrl.unmount();
+
+    ctrl = createHideController();
+    root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW + 65_000));
+    liquid = root.querySelector('.mc-hourglass__liquid') as SVGElement;
+    expect(liquid.style.getPropertyValue('--mc-hourglass-fill')).toBe('1.000');
+    ctrl.unmount();
+  });
+
+  it('empties to 0.000 once the countdown fully elapses (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountEditCtx(NOW));
+    const liquid = root.querySelector('.mc-hourglass__liquid') as SVGElement;
+    expect(liquid.style.getPropertyValue('--mc-hourglass-fill')).toBe('0.000');
+    ctrl.unmount();
+  });
+});
+
 describe('hide HUD: keycap control strip (D3, D8)', () => {
   it('renders each control as an individual .mc-keycap chip, including all 4 arrow keys (normal)', async () => {
     const { createHideController } = await import('../src/hide/index');
@@ -388,6 +438,84 @@ describe('hide wait screen: themed seeker hold (D6, D8)', () => {
       vi.advanceTimersByTime(WAIT_MESSAGE_ROTATE_MS * 3);
       expect(root.querySelector('.mc-wait-msg')?.textContent).toBe(WAIT_MESSAGES[0]);
     });
+  });
+});
+
+describe('hide wait screen: hourglass liquid fill (D1, D5-D8)', () => {
+  it('renders the hourglass stack with a full liquid fill before the wait countdown drains (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const ctx = {
+      socket: { emit: () => {}, on: () => {}, off: () => {} },
+      state: { playerId: 'p1', role: 'seeker', room: { endsAt: Date.now() + 60_000 }, hidePayload: null },
+    } as never;
+    ctrl.mount(root, ctx);
+    expect(root.querySelector('.mc-hud-timer.mc-hud-timer--wait')).not.toBeNull();
+    const liquid = root.querySelector('.mc-hourglass__liquid') as SVGElement;
+    expect(liquid.style.getPropertyValue('--mc-hourglass-fill')).toBe('1.000');
+    ctrl.unmount();
+  });
+
+  it('leaves the fill unset and does not throw when there is no room endsAt yet (error)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    const ctx = {
+      socket: { emit: () => {}, on: () => {}, off: () => {} },
+      state: { playerId: 'p1', role: 'seeker', room: null, hidePayload: null },
+    } as never;
+    expect(() => ctrl.mount(root, ctx)).not.toThrow();
+    const liquid = root.querySelector('.mc-hourglass__liquid') as SVGElement;
+    expect(liquid.style.getPropertyValue('--mc-hourglass-fill')).toBe('');
+    ctrl.unmount();
+  });
+});
+
+describe('hide wait screen: timer urgency toggle (D6, D20)', () => {
+  const NOW = Date.parse('2026-01-01T00:00:00Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function mountWaitUrgentCtx(endsAt: number) {
+    return {
+      socket: { emit: () => {}, on: () => {}, off: () => {} },
+      state: { playerId: 'p1', role: 'seeker', room: { endsAt }, hidePayload: null },
+    } as never;
+  }
+
+  it('does not carry is-urgent just above the 10s threshold, the class the D20 numeral-color rule keys off (normal)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountWaitUrgentCtx(NOW + 10_001));
+    expect(root.querySelector('.mc-hud-timer.mc-hud-timer--wait')?.classList.contains('is-urgent')).toBe(false);
+    ctrl.unmount();
+  });
+
+  it('carries is-urgent exactly at the 10000ms remaining boundary (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountWaitUrgentCtx(NOW + 10_000));
+    expect(root.querySelector('.mc-hud-timer.mc-hud-timer--wait')?.classList.contains('is-urgent')).toBe(true);
+    ctrl.unmount();
+  });
+
+  it('stays is-urgent just under the boundary at 9999ms remaining (boundary)', async () => {
+    const { createHideController } = await import('../src/hide/index');
+    const ctrl = createHideController();
+    const root = document.createElement('div');
+    ctrl.mount(root, mountWaitUrgentCtx(NOW + 9_999));
+    expect(root.querySelector('.mc-hud-timer.mc-hud-timer--wait')?.classList.contains('is-urgent')).toBe(true);
+    ctrl.unmount();
   });
 });
 
