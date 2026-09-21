@@ -190,12 +190,6 @@
   padding: var(--space-lg) 0;
 }
 
-.mc-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
 /* create panel: the form fills the panel and its primary button sits on the
    shared bottom line, so both boxes end together */
 .mc-panel > .mc-form {
@@ -204,38 +198,6 @@
 
 .mc-panel > .mc-form > .mc-form-submit {
   margin-top: auto;
-}
-
-.mc-input,
-.mc-form input[type='text'],
-.mc-form input[type='password'],
-.mc-nick input {
-  font-family: var(--font-body);
-  font-size: 15px;
-  padding: 10px 12px;
-  border: 1.5px solid var(--color-line);
-  border-radius: 10px;
-  background: var(--color-card);
-  color: var(--color-ink);
-  min-width: 0;
-}
-
-.mc-input:hover,
-.mc-form input:hover {
-  border-color: var(--color-ink-soft);
-}
-
-.mc-input:focus-visible,
-.mc-form input:focus-visible,
-.mc-nick input:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
-.mc-input::placeholder,
-.mc-form input::placeholder,
-.mc-nick input::placeholder {
-  color: var(--color-ink-soft);
 }
 
 .mc-visibility {
@@ -268,18 +230,6 @@
 .mc-visibility button[aria-pressed='true'] {
   background: var(--color-keycap);
   color: var(--color-ink-strong);
-}
-
-.mc-error {
-  display: inline-block;
-  color: var(--color-ink-strong);
-  background: var(--color-danger);
-  font-size: 13px;
-  font-weight: 700;
-  margin: 0;
-  padding: 4px 10px;
-  border-radius: 6px;
-  transform: rotate(-1deg);
 }
 
 .mc-room-screen {

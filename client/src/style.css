@@ -5,6 +5,7 @@
 @import './lobby/lobby.css';
 @import './hide/hide.css';
 @import './seek/seek.css';
+@import './fx/fx.css';
 
 html,
 body {
@@ -14,11 +15,11 @@ body {
 body {
   margin: 0;
   background: var(--color-paper);
-  /* brick + plaster stage texture: two low-contrast brick-course hatches + a soft radial grain (D5) */
   background-image:
-    repeating-linear-gradient(0deg, transparent 0 27px, oklch(0% 0 0 / 0.05) 27px 29px),
-    repeating-linear-gradient(90deg, transparent 0 55px, oklch(0% 0 0 / 0.035) 55px 57px),
-    radial-gradient(ellipse at 30% 20%, oklch(100% 0 0 / 0.04), transparent 60%);
+    repeating-linear-gradient(0deg, transparent 0 27px, var(--color-brick-shadow) 27px 29px),
+    repeating-linear-gradient(90deg, transparent 0 55px, var(--color-brick-shadow) 55px 57px),
+    linear-gradient(135deg, transparent 55%, var(--color-brick-glow) 100%),
+    linear-gradient(var(--color-brick), var(--color-brick));
   color: var(--color-ink);
   font-family: var(--font-body);
 }
@@ -65,13 +66,12 @@ input:focus-visible {
   font-size: 15px;
   font-weight: 400;
   padding: 10px 20px;
-  border: 2.5px solid var(--color-ink-strong);
-  border-radius: 12px;
+  border: var(--border-width-thin) solid var(--color-accent);
+  border-radius: var(--radius-btn);
   background: var(--color-card);
   color: var(--color-ink);
   cursor: pointer;
-  box-shadow: 0 5px 0 var(--color-ink-strong);
-  transition: transform var(--dur-quick) var(--ease-out), box-shadow var(--dur-quick) var(--ease-out);
+  transition: transform var(--dur-quick) var(--ease-out), border-color var(--dur-quick) var(--ease-out);
 }
 
 .mc-btn:hover:not(:disabled) {
@@ -79,8 +79,7 @@ input:focus-visible {
 }
 
 .mc-btn:active:not(:disabled) {
-  transform: translateY(4px);
-  box-shadow: 0 1px 0 var(--color-ink-strong);
+  transform: translateY(1px);
 }
 
 .mc-btn:focus-visible {
@@ -92,22 +91,24 @@ input:focus-visible {
   filter: saturate(0);
   opacity: 0.5;
   cursor: default;
-  box-shadow: 0 5px 0 var(--color-ink-strong);
   transform: none;
 }
 
 .mc-btn--green {
   background: var(--color-go);
+  border-color: var(--color-go);
   color: var(--color-ink-strong);
 }
 
 .mc-btn--red {
   background: var(--color-danger);
+  border-color: var(--color-danger);
   color: var(--color-ink-strong);
 }
 
 .mc-btn--yellow {
   background: var(--color-hint);
+  border-color: var(--color-hint);
   color: var(--color-ink-strong);
 }
 
@@ -128,19 +129,20 @@ input:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 3px 8px;
-  border: 1.5px solid var(--color-ink-strong);
+  border: 1.5px solid var(--color-accent);
   border-radius: 6px;
   background: var(--color-card);
-  color: var(--color-ink-strong);
-  box-shadow: 0 2px 0 var(--color-ink-strong);
+  color: var(--color-ink);
 }
 
 .mc-keycap--green {
   background: var(--color-go);
+  color: var(--color-ink-strong);
 }
 
 .mc-keycap--yellow {
   background: var(--color-hint);
+  color: var(--color-ink-strong);
 }
 
 .mc-title-paint {
@@ -165,7 +167,7 @@ input:focus-visible {
   font-size: clamp(44px, 10vw, 112px);
   line-height: 1;
   color: var(--color-ink);
-  text-shadow: 0 2px 8px oklch(0% 0 0 / 0.45);
+  text-shadow: 0 2px 8px var(--color-shadow);
   font-variant-numeric: tabular-nums;
 }
 
@@ -222,4 +224,54 @@ input:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+.mc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.mc-input,
+.mc-form input[type='text'],
+.mc-form input[type='password'],
+.mc-nick input {
+  font-family: var(--font-body);
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-card);
+  color: var(--color-ink);
+  min-width: 0;
+}
+
+.mc-input:hover,
+.mc-form input:hover {
+  border-color: var(--color-ink-soft);
+}
+
+.mc-input:focus-visible,
+.mc-form input:focus-visible,
+.mc-nick input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.mc-input::placeholder,
+.mc-form input::placeholder,
+.mc-nick input::placeholder {
+  color: var(--color-ink-soft);
+}
+
+.mc-error {
+  display: inline-block;
+  color: var(--color-ink-strong);
+  background: var(--color-danger);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transform: rotate(-1deg);
 }

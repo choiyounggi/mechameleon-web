@@ -1,50 +1,61 @@
-/* Hallmark · scope: game UI (paint-pop arcade redesign) · theme: studied-DNA (source: image — MECCHA CHAMELEON Steam key art + in-game HUD screenshots, public reference)
- * DNA: HUD painted directly on a brick/plaster "stage" (no cards) · chunky per-letter rainbow display · elegant serif numerals ·
- *      keycap chips · 3D stamped keycap buttons · warm dark backstage wall, rainbow reserved for display/accents
- * paper oklch(24% 0.018 40) · ink oklch(96% 0.01 85) · display Black Han Sans · body IBM Plex Sans KR · numerals Playfair Display
+/* Hallmark · scope: game UI (original-DNA arcade redesign) · theme: studied-DNA (source: image — MECCHA CHAMELEON Steam key art + in-game HUD screenshots, public reference; research: .orchestration/research/original-game-visual-spec.md)
+ * DNA: near-black panel/button fill + thin lime-green outline (single accent, everywhere) · lit red-brick backstage wall · bold white HUD numerals ·
+ *      mint "waiting" status color · violet join-code pill · rainbow diagonal paint gradients · no drop shadow beyond the outline itself
+ * paper oklch(14% 0.015 40) · ink oklch(97% 0.008 140) · display Jua · body Gothic A1 · numerals Fredoka
  * studied: yes · Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4
  */
 :root {
-  /* paper & ink — dark warm "backstage wall" (D2) */
-  --color-paper: oklch(24% 0.018 40);
-  --color-paper-2: oklch(20% 0.02 38);
-  --color-card: oklch(29% 0.02 42);
-  --color-ink: oklch(96% 0.01 85);
-  --color-ink-soft: oklch(78% 0.015 80);
-  --color-ink-strong: oklch(18% 0.02 40);
-  --color-line: oklch(38% 0.02 45);
+  /* paper & ink — near-black panel/button fill + brick backstage wall (D1, D2, D5) */
+  --color-paper: oklch(14% 0.015 40);
+  --color-card: oklch(16% 0.01 140);
+  --color-ink: oklch(97% 0.008 140);
+  --color-ink-soft: oklch(80% 0.012 140);
+  --color-ink-strong: oklch(10% 0.01 140);
+  --color-line: oklch(30% 0.01 140);
 
-  /* paint accents (display / chips / keycaps — bumped for dark-bg contrast) (D4) */
-  --color-paint-red: oklch(65% 0.21 25);
-  --color-paint-orange: oklch(75% 0.17 55);
-  --color-paint-yellow: oklch(86% 0.15 95);
-  --color-paint-green: oklch(71% 0.17 145);
-  --color-paint-cyan: oklch(79% 0.12 200);
-  --color-paint-violet: oklch(61% 0.18 300);
-  --color-accent: var(--color-paint-green);
-  --color-danger: var(--color-paint-red);
-  --color-focus: oklch(52% 0.15 235);
-  --color-keycap: oklch(90% 0.07 195);
+  /* signature accent + status colors (D2, D3, D4, D13) */
+  --color-accent: oklch(86% 0.28 140);
+  --color-go: var(--color-accent);
+  --color-danger: oklch(58% 0.21 25);
+  --color-hint: oklch(84% 0.15 95);
+  --color-mint: oklch(79% 0.16 155);
+  --color-focus: var(--color-accent);
+  --color-keycap: var(--color-mint);
+  --color-code: oklch(52% 0.25 305);
 
-  /* semantic color coding (design-dna: 초록=go/hide, 빨강=found/danger, 노랑=hint) (D4) */
-  --color-go: var(--color-paint-green);
-  --color-hint: var(--color-paint-yellow);
+  /* rainbow paint set — wordmark + diagonal room-card gradients (D1) */
+  --color-paint-red: oklch(67% 0.20 35);
+  --color-paint-orange: oklch(75% 0.18 55);
+  --color-paint-yellow: oklch(87% 0.16 90);
+  --color-paint-green: oklch(82% 0.19 140);
+  --color-paint-cyan: oklch(78% 0.13 225);
+  --color-paint-violet: oklch(65% 0.25 350);
 
-  /* type */
-  --font-display: 'Black Han Sans', 'IBM Plex Sans KR', sans-serif;
-  --font-body: 'IBM Plex Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-numeral: 'Playfair Display', Georgia, serif;
+  /* brick backstage wall (D5) */
+  --color-brick: oklch(47% 0.11 35);
+  --color-brick-shadow: oklch(17% 0.02 40);
+  --color-brick-glow: oklch(40% 0.13 260 / 0.35);
 
-  /* 4pt scale */
+  /* overlay tint (D11) */
+  --color-shadow: oklch(0% 0 0 / 0.45);
+
+  /* type (user-decisions #3, D6) */
+  --font-display: 'Jua', 'Gothic A1', sans-serif;
+  --font-body: 'Gothic A1', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-numeral: 'Fredoka', 'Gothic A1', sans-serif;
+
+  /* 4pt scale (unchanged) */
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 40px;
 
-  /* shape & motion */
-  --radius-card: 14px;
+  /* shape, border & motion (D11) */
+  --radius-card: 10px;
+  --radius-btn: 8px;
   --radius-chip: 999px;
+  --border-width-thin: 2px;
   --rule-card: 2px solid var(--color-ink);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-quick: 140ms;
