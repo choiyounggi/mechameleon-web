@@ -11,6 +11,19 @@ import {
 } from 'shared/protocol';
 import { type Emit, RoomEngine, type Scheduler, realRng } from './engine/room-engine';
 
+// contract: t1-crash-guard owns the implementation
+// Wraps a socket.io listener so a synchronous throw is logged and, when the
+// event carries an ack (always the last argument), answered with
+// { ok: false, code: 'INTERNAL' } instead of killing the process.
+// t3-reconnect registers its new handlers through this wrapper.
+export function safeHandler<Args extends unknown[]>(
+  event: string,
+  handler: (...args: Args) => void,
+): (...args: Args) => void {
+  throw new Error(`contract stub: safeHandler(${event}) — t1-crash-guard implements this; ${typeof handler}`);
+}
+
+
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
