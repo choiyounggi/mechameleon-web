@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TargetHttpError,
   clampCaptureHeight,
   gotoWithRetry,
   guardRoute,
@@ -155,12 +156,15 @@ interface GotoCall {
   options: { waitUntil: 'networkidle' | 'domcontentloaded'; timeout: number };
 }
 
+const ok = { status: () => 200 };
+
 describe('gotoWithRetry', () => {
   it('navigates once and returns when the primary attempt succeeds', async () => {
     const calls: GotoCall[] = [];
     const fake: Navigable = {
       async goto(url, options) {
         calls.push({ url, options });
+        return ok;
       },
     };
 
@@ -179,6 +183,7 @@ describe('gotoWithRetry', () => {
         calls.push({ url, options });
         attempt++;
         if (attempt === 1) throw new Error('primary nav timeout');
+        return ok;
       },
     };
 
@@ -198,5 +203,56 @@ describe('gotoWithRetry', () => {
     };
 
     await expect(gotoWithRetry(fake, 'https://example.com')).rejects.toThrow('nav failed');
+  });
+
+  it('refuses a page that answers 403 and does not retry — an "access denied" body is not a background', async () => {
+    const calls: GotoCall[] = [];
+    const fake: Navigable = {
+      async goto(url, options) {
+        calls.push({ url, options });
+        return { status: () => 403 };
+      },
+    };
+
+    const err = await gotoWithRetry(fake, 'https://example.com').catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(TargetHttpError);
+    expect((err as TargetHttpError).status).toBe(403);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('refuses a non-2xx answer that only arrives on the retry attempt', async () => {
+    let attempt = 0;
+    const fake: Navigable = {
+      async goto() {
+        attempt++;
+        if (attempt === 1) throw new Error('primary nav timeout');
+        return { status: () => 503 };
+      },
+    };
+
+    await expect(gotoWithRetry(fake, 'https://example.com')).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('refuses when goto resolves null — the status cannot be verified (boundary)', async () => {
+    const fake: Navigable = {
+      async goto() {
+        return null;
+      },
+    };
+
+    await expect(gotoWithRetry(fake, 'https://example.com')).rejects.toMatchObject({ status: 0 });
+  });
+
+  it('accepts the 2xx boundaries (200 and 299) and rejects 199 and 300', async () => {
+    const outcome = async (status: number) =>
+      gotoWithRetry({ async goto() { return { status: () => status }; } }, 'https://example.com')
+        .then(() => 'ok')
+        .catch(() => 'refused');
+
+    expect(await outcome(200)).toBe('ok');
+    expect(await outcome(299)).toBe('ok');
+    expect(await outcome(199)).toBe('refused');
+    expect(await outcome(300)).toBe('refused');
   });
 });

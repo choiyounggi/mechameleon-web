@@ -7,7 +7,7 @@ import express, { Router, type Request, type Response } from 'express';
 import { imageSize } from 'image-size';
 import multer from 'multer';
 import { zCaptureReq, type Background } from 'shared/protocol';
-import { playwrightScreenshotter, withConcurrencyLimit, type Screenshotter } from './screenshotter';
+import { TargetHttpError, playwrightScreenshotter, withConcurrencyLimit, type Screenshotter } from './screenshotter';
 import { isPublicUrl } from './url-guard';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,7 +110,11 @@ export function createCaptureRouter(s: Screenshotter): Router {
     let result;
     try {
       result = await s.capture(parsed.data.url);
-    } catch {
+    } catch (err) {
+      if (err instanceof TargetHttpError) {
+        res.status(502).json({ error: { code: 'TARGET_HTTP_ERROR', message: err.message } });
+        return;
+      }
       res.status(502).json({ error: { code: 'CAPTURE_FAILED', message: 'failed to capture the page' } });
       return;
     }

@@ -5,7 +5,7 @@ import express, { type Response } from 'express';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCaptureRouter, handleUploadMiddlewareResult } from '../src/capture/index';
-import type { CaptureResult, Screenshotter } from '../src/capture/screenshotter';
+import { TargetHttpError, type CaptureResult, type Screenshotter } from '../src/capture/screenshotter';
 
 // Smallest-possible 1x1 pixel fixtures, verified to decode via image-size.
 const ONE_PIXEL_PNG = Buffer.from(
@@ -113,6 +113,16 @@ describe('POST /api/capture', () => {
 
     expect(res.status).toBe(502);
     expect(res.body.error.code).toBe('CAPTURE_FAILED');
+  });
+
+  it('maps a non-2xx answer from the target page to 502 TARGET_HTTP_ERROR carrying the status', async () => {
+    const app = appWith(fakeScreenshotter(new TargetHttpError(403)));
+
+    const res = await request(app).post('/api/capture').send({ url: 'https://example.com' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error.code).toBe('TARGET_HTTP_ERROR');
+    expect(res.body.error.message).toContain('403');
   });
 
   it('passes through the boundary height (15000) unchanged', async () => {

@@ -1,10 +1,10 @@
 import type { Background } from 'shared/protocol';
 
-export type CaptureErrorCode = 'INVALID_URL' | 'CAPTURE_FAILED' | 'INVALID_IMAGE' | 'UNKNOWN';
+export type CaptureErrorCode = 'INVALID_URL' | 'CAPTURE_FAILED' | 'TARGET_HTTP_ERROR' | 'INVALID_IMAGE' | 'UNKNOWN';
 
 export type CaptureResult = { ok: true; background: Background } | { ok: false; code: CaptureErrorCode };
 
-const KNOWN_CODES: readonly CaptureErrorCode[] = ['INVALID_URL', 'CAPTURE_FAILED', 'INVALID_IMAGE'];
+const KNOWN_CODES: readonly CaptureErrorCode[] = ['INVALID_URL', 'CAPTURE_FAILED', 'TARGET_HTTP_ERROR', 'INVALID_IMAGE'];
 
 async function parseCaptureResponse(res: Response): Promise<CaptureResult> {
   if (res.ok) {

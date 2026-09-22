@@ -37,17 +37,41 @@ function getBrowser(): Promise<Browser> {
 // Narrow structural subset of playwright's Page -- lets gotoWithRetry (and its
 // tests) depend on just the one method it needs, instead of a real browser.
 export interface Navigable {
-  goto(url: string, options: { waitUntil: 'networkidle' | 'domcontentloaded'; timeout: number }): Promise<unknown>;
+  goto(
+    url: string,
+    options: { waitUntil: 'networkidle' | 'domcontentloaded'; timeout: number },
+  ): Promise<{ status(): number } | null>;
+}
+
+// The target answered, but not with a page worth hiding in: a 403 "access
+// denied" or 404 body screenshots just fine, and once did — the game ran on a
+// picture of an error page. Distinct from a navigation failure so the router
+// can tell the player what actually happened.
+export class TargetHttpError extends Error {
+  constructor(public readonly status: number) {
+    super(`target responded with HTTP ${status}`);
+    this.name = 'TargetHttpError';
+  }
+}
+
+function assertOk(response: { status(): number } | null): void {
+  // goto() resolves null only for same-document navigations, which an http(s)
+  // entry URL never is — treat it as "could not verify" and refuse.
+  const status = response?.status() ?? 0;
+  if (status < 200 || status > 299) throw new TargetHttpError(status);
 }
 
 // D3: one retry with a shorter timeout and a looser wait condition; if that
 // also fails the error propagates to the caller (mapped to 502 CAPTURE_FAILED).
+// A non-2xx answer is final — the server has spoken — so it is not retried.
 export async function gotoWithRetry(page: Navigable, url: string): Promise<void> {
+  let response: { status(): number } | null;
   try {
-    await page.goto(url, { waitUntil: 'networkidle', timeout: PRIMARY_TIMEOUT_MS });
+    response = await page.goto(url, { waitUntil: 'networkidle', timeout: PRIMARY_TIMEOUT_MS });
   } catch {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: RETRY_TIMEOUT_MS });
+    response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: RETRY_TIMEOUT_MS });
   }
+  assertOk(response);
 }
 
 const MAX_REDIRECT_HOPS = 5;

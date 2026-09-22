@@ -7,6 +7,8 @@ export function captureErrorMessage(code: CaptureErrorCode): string {
       return '주소를 확인해 주세요';
     case 'CAPTURE_FAILED':
       return '이 페이지는 캡처가 안 돼요 — 파일 업로드를 사용하세요';
+    case 'TARGET_HTTP_ERROR':
+      return '페이지가 열리지 않아요 (접근 거부·없는 페이지) — 다른 주소나 파일 업로드를 사용하세요';
     default:
       return '잠시 후 다시 시도';
   }
