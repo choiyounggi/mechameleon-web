@@ -196,3 +196,113 @@ describe('lobby home — room list status pill', () => {
     ctrl.unmount();
   });
 });
+
+describe('lobby home — typing survives re-renders', () => {
+  function mountInDocument(net: MockNet) {
+    const ctx = makeCtx(net);
+    const root = document.createElement('div');
+    document.body.appendChild(root); // focus() only takes on attached nodes
+    const ctrl = createLobbyController();
+    ctrl.mount(root, ctx);
+    return {
+      ctx,
+      root,
+      done() {
+        ctrl.unmount();
+        root.remove();
+      },
+    };
+  }
+
+  function nickInput(root: HTMLElement): HTMLInputElement {
+    return root.querySelector<HTMLInputElement>('input[aria-label="닉네임"]')!;
+  }
+
+  it('keeps focus, value and caret in the nickname input when a room:state repaint lands mid-typing (normal)', async () => {
+    const net: MockNet = { rooms: [summary()], joinAck: { ok: false, code: 'ROOM_NOT_FOUND' }, joinCalls: [] };
+    const m = mountInDocument(net);
+    await flush();
+
+    const input = nickInput(m.root);
+    input.focus();
+    input.value = '영기';
+    input.setSelectionRange(1, 1);
+    expect(document.activeElement).toBe(input);
+
+    // Grab the socket 'room:state' handler the lobby registered and fire it.
+    const on = (m.ctx.socket as unknown as { on: ReturnType<typeof vi.fn> }).on;
+    const onRoomState = on.mock.calls.find((c: unknown[]) => c[0] === 'room:state')![1] as () => void;
+    onRoomState();
+
+    const rebuilt = nickInput(m.root);
+    expect(rebuilt).not.toBe(input); // the DOM really was torn down
+    expect(document.activeElement).toBe(rebuilt);
+    expect(rebuilt.value).toBe('영기');
+    expect(rebuilt.selectionStart).toBe(1);
+    expect(rebuilt.selectionEnd).toBe(1);
+    m.done();
+  });
+
+  it('defers the room-list poll repaint while an input is focused, then catches up once typing stops (normal)', async () => {
+    vi.useFakeTimers();
+    try {
+      const net: MockNet = { rooms: [summary()], joinAck: { ok: false, code: 'ROOM_NOT_FOUND' }, joinCalls: [] };
+      const m = mountInDocument(net);
+      await flush();
+
+      const nameInput = m.root.querySelector<HTMLInputElement>('input[aria-label="방 이름"]')!;
+      nameInput.focus();
+      nameInput.value = '몰';
+      net.rooms = [summary(), summary({ code: 'NEWROO', name: '새로운방' })];
+
+      await vi.advanceTimersByTimeAsync(3000);
+      // Same node — no repaint happened under the user's caret.
+      expect(m.root.querySelector<HTMLInputElement>('input[aria-label="방 이름"]')).toBe(nameInput);
+      expect(document.activeElement).toBe(nameInput);
+      expect(m.root.textContent).not.toContain('새로운방');
+
+      nameInput.blur();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(m.root.textContent).toContain('새로운방');
+      expect(m.root.querySelector<HTMLInputElement>('input[aria-label="방 이름"]')!.value).toBe('몰');
+      m.done();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not tear down the screen when the polled room list is unchanged (boundary)', async () => {
+    vi.useFakeTimers();
+    try {
+      const net: MockNet = { rooms: [summary()], joinAck: { ok: false, code: 'ROOM_NOT_FOUND' }, joinCalls: [] };
+      const m = mountInDocument(net);
+      await flush();
+
+      const before = nickInput(m.root);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(nickInput(m.root)).toBe(before);
+      m.done();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips the poll repaint even when the room list comes back empty while typing (boundary)', async () => {
+    vi.useFakeTimers();
+    try {
+      const net: MockNet = { rooms: [summary()], joinAck: { ok: false, code: 'ROOM_NOT_FOUND' }, joinCalls: [] };
+      const m = mountInDocument(net);
+      await flush();
+
+      const input = nickInput(m.root);
+      input.focus();
+      net.rooms = [];
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(document.activeElement).toBe(input);
+      expect(m.root.textContent).toContain('몰컴방'); // stale on purpose until typing stops
+      m.done();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

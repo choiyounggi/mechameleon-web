@@ -130,20 +130,37 @@ export function createLobbyController(): PhaseController {
         }
       }
 
+      /** The input inside `root` the user is currently typing in, if any. */
+      function focusedInput(): HTMLInputElement | null {
+        const el = document.activeElement;
+        return el instanceof HTMLInputElement && root.contains(el) ? el : null;
+      }
+
       function render(): void {
         // Detach the outgoing screen's press-FX listeners before it's discarded.
         pressFxDetachers.forEach((detach) => detach());
         pressFxDetachers = [];
-        // Preserve in-progress inputs across re-renders.
+        // Preserve in-progress inputs across re-renders — value, and focus/caret
+        // for the one being typed in (innerHTML = '' destroys the focused node).
         const keep = new Map<string, string>();
         for (const input of root.querySelectorAll<HTMLInputElement>('input[aria-label]')) {
           keep.set(input.getAttribute('aria-label')!, input.value);
         }
+        const active = focusedInput();
+        const activeLabel = active?.getAttribute('aria-label') ?? null;
+        const caret = active ? { start: active.selectionStart, end: active.selectionEnd } : null;
         root.innerHTML = '';
         root.appendChild(ctx.state.playerId && ctx.state.room ? renderRoomScreen() : renderHomeScreen());
         for (const input of root.querySelectorAll<HTMLInputElement>('input[aria-label]')) {
-          const prev = keep.get(input.getAttribute('aria-label')!);
+          const label = input.getAttribute('aria-label')!;
+          const prev = keep.get(label);
           if (prev !== undefined && input.value === '') input.value = prev;
+          if (label === activeLabel) {
+            input.focus();
+            if (caret && caret.start !== null && caret.end !== null) {
+              input.setSelectionRange(caret.start, caret.end);
+            }
+          }
         }
       }
 
@@ -430,6 +447,12 @@ export function createLobbyController(): PhaseController {
         if (ctx.state.playerId && ctx.state.room) return; // in a room — list hidden
         const res = await listRooms(ctx);
         if (!mounted) return; // resolved after a phase switch — don't repaint
+        // Typing takes priority over the 3s poll: rebuilding the DOM mid-
+        // composition drops the Hangul syllable being composed, which focus
+        // restoration alone can't undo. `rooms` stays stale on purpose so the
+        // next poll still sees the change and repaints once typing stops.
+        if (focusedInput()) return;
+        if (JSON.stringify(res.rooms) === JSON.stringify(rooms)) return; // no change — don't tear down the screen
         rooms = res.rooms;
         render();
       }
