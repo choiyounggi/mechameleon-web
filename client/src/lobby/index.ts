@@ -205,6 +205,14 @@ export function createLobbyController(): PhaseController {
         tagline.textContent = '배경색으로 위장해서 숨고, 동료의 눈을 피해 살아남으세요';
         wrap.appendChild(tagline);
 
+        if (ctx.state.abortNotice) {
+          const notice = document.createElement('p');
+          notice.className = 'mc-error';
+          notice.setAttribute('role', 'alert');
+          notice.textContent = ctx.state.abortNotice;
+          wrap.appendChild(notice);
+        }
+
         const nickRow = document.createElement('div');
         nickRow.className = 'mc-nick';
         const nickInput = document.createElement('input');

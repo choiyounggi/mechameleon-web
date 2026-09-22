@@ -5,6 +5,7 @@ import type {
   Result,
   RoomCreateAck,
   RoomJoinAck,
+  RoomRejoinAck,
   RoomStatePublic,
   RoomSummary,
   SeekClickAck,
@@ -50,6 +51,42 @@ export function createAppContext(): AppContext {
   };
 }
 
+// Tab-scoped identity so a refresh/reconnect can room:rejoin the same seat.
+const IDENTITY_STORAGE_KEY = 'mc-identity';
+
+interface StoredIdentity {
+  playerId: string;
+  roomCode: string;
+}
+
+function saveIdentity(identity: StoredIdentity): void {
+  try {
+    window.sessionStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity));
+  } catch {
+    /* private mode -- non-fatal */
+  }
+}
+
+function loadIdentity(): StoredIdentity | null {
+  try {
+    const raw = window.sessionStorage.getItem(IDENTITY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.playerId === 'string' && typeof parsed?.roomCode === 'string') return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearIdentity(): void {
+  try {
+    window.sessionStorage.removeItem(IDENTITY_STORAGE_KEY);
+  } catch {
+    /* private mode -- non-fatal */
+  }
+}
+
 export interface CreateRoomOpts {
   roomName: string;
   isPrivate: boolean;
@@ -58,7 +95,10 @@ export interface CreateRoomOpts {
 
 export function createRoom(ctx: AppContext, nickname: string, opts: CreateRoomOpts): Promise<RoomCreateAck> {
   return new Promise((resolve) => {
-    ctx.socket.emit('room:create', { nickname, ...opts }, resolve);
+    ctx.socket.emit('room:create', { nickname, ...opts }, (res) => {
+      if (res.ok) saveIdentity({ playerId: res.playerId, roomCode: res.code });
+      resolve(res);
+    });
   });
 }
 
@@ -69,7 +109,31 @@ export function joinRoom(
   password?: string,
 ): Promise<RoomJoinAck> {
   return new Promise((resolve) => {
-    ctx.socket.emit('room:join', { code, nickname, password }, resolve);
+    ctx.socket.emit('room:join', { code, nickname, password }, (res) => {
+      if (res.ok) saveIdentity({ playerId: res.playerId, roomCode: code });
+      resolve(res);
+    });
+  });
+}
+
+export function rejoinRoom(ctx: AppContext): Promise<RoomRejoinAck> | null {
+  const identity = loadIdentity();
+  if (!identity) return null;
+
+  // Optimistic: the server's snapshot events (room:state, etc.) arrive
+  // BEFORE this ack over the same connection (room:rejoin acks last), so
+  // any phase screen reading ctx.state.playerId off those events would
+  // otherwise race a playerId set only inside the ack callback.
+  ctx.state.playerId = identity.playerId;
+
+  return new Promise((resolve) => {
+    ctx.socket.emit('room:rejoin', { playerId: identity.playerId }, (res: RoomRejoinAck) => {
+      if (!res.ok) {
+        ctx.state.playerId = null;
+        clearIdentity();
+      }
+      resolve(res);
+    });
   });
 }
 

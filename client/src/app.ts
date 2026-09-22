@@ -1,10 +1,12 @@
 import type { ServerToClientEvents } from 'shared/protocol';
 import type { AppContext } from './net';
-import { leaveRoom } from './net';
+import { clearIdentity, leaveRoom, rejoinRoom } from './net';
 import { createPhaseRouter } from './phases';
 import './lobby';
 import './hide';
 import { initSeek } from './seek';
+
+const REJOIN_FAILED_TEXT = '이전 방에 다시 들어갈 수 없어요';
 
 // Derived from the actual event payload (not duplicated) so a future reason
 // added to shared/protocol.ts fails this Record literal at compile time
@@ -30,6 +32,7 @@ export function bootstrap(root: HTMLElement, ctx: AppContext): void {
   // which needs the force remount to actually repaint.
   async function leaveToHome(): Promise<void> {
     await leaveRoom(ctx);
+    clearIdentity(); // a deliberately left room must never be auto-rejoined
     ctx.state.playerId = null;
     ctx.state.role = null;
     ctx.state.room = null;
@@ -38,6 +41,21 @@ export function bootstrap(root: HTMLElement, ctx: AppContext): void {
     router.onPhase('lobby', { force: true });
   }
   ctx.leaveToHome = leaveToHome;
+
+  // 'connect' fires on the first connection AND every reconnection; a saved
+  // identity means this tab was in a room, so ask for the seat back.
+  ctx.socket.on('connect', () => {
+    const pending = rejoinRoom(ctx);
+    if (!pending) return;
+    void pending.then((res) => {
+      if (!res.ok) {
+        ctx.state.abortNotice = REJOIN_FAILED_TEXT;
+        router.onPhase('lobby', { force: true });
+      }
+      // on success: the room:state/game:role/phase:* listeners below
+      // already drive the phase router off the server's snapshot events.
+    });
+  });
 
   ctx.socket.on('room:state', (state) => {
     ctx.state.room = state;

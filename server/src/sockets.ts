@@ -5,6 +5,7 @@ import {
   zHideUpdateReq,
   zRoomCreateReq,
   zRoomJoinReq,
+  zRoomRejoinReq,
   zSeekClickReq,
   zSetBackgroundReq,
   zSetHiderCountReq,
@@ -207,13 +208,35 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       ack({ ok: true });
     }));
 
+    socket.on('room:rejoin', safeHandler('room:rejoin', (req, ack) => {
+      const parsed = zRoomRejoinReq.safeParse(req);
+      if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
+      if (myPlayerId) return ack({ ok: false, code: 'ALREADY_BOUND' });
+
+      const playerId = parsed.data.playerId;
+      const result = engine.rejoin(playerId);
+      if (!result.ok) return ack(result);
+
+      bindPlayer(playerId, result.code);
+      // Snapshot BEFORE the ack: the ack must stay the terminal action, so a
+      // throw here is answered once with INTERNAL by safeHandler.
+      engine.snapshotFor(playerId);
+      ack({ ok: true, playerId });
+    }));
+
     socket.on('disconnect', safeHandler('disconnect', () => {
       if (!myPlayerId) return;
       const playerId = myPlayerId;
+      if (playerSockets.get(playerId) !== socket) return; // superseded by an earlier rejoin -- this disconnect is stale, no-op
       const roomCode = roomOfPlayer.get(playerId);
-      withRoomContext(roomCode, () => engine.leave(playerId));
-      playerSockets.delete(playerId);
-      roomOfPlayer.delete(playerId);
+      // Keep the seat for DISCONNECT_GRACE_MS; the socket maps are cleaned
+      // only when the grace actually expires (onExpire), never here.
+      withRoomContext(roomCode, () =>
+        engine.markDisconnected(playerId, () => {
+          playerSockets.delete(playerId);
+          roomOfPlayer.delete(playerId);
+        }),
+      );
     }));
   });
 

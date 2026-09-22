@@ -276,4 +276,204 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
       goodClient.close();
     }
   });
+
+  it('disconnect during hide phase keeps the seat: a new socket room:rejoin within the grace gets the same playerId back, phase preserved, and the other client received NO game:aborted', async () => {
+    const host = connect();
+    const guest = connect();
+    try {
+      await Promise.all([waitConnected(host), waitConnected(guest)]);
+      const createAck: any = await new Promise((resolve) =>
+        host.emit('room:create', { nickname: 'host', roomName: '재접속검증', isPrivate: false }, resolve),
+      );
+      const code: string = createAck.code;
+      const guestJoinAck: any = await new Promise((resolve) =>
+        guest.emit('room:join', { code, nickname: 'guest' }, resolve),
+      );
+      expect(guestJoinAck.ok).toBe(true);
+      const guestPlayerId: string = guestJoinAck.playerId;
+
+      const bgAck: any = await new Promise((resolve) =>
+        host.emit(
+          'room:setBackground',
+          { background: { imageUrl: 'https://example.com/x.png', width: 1440, height: 2000 } },
+          resolve,
+        ),
+      );
+      expect(bgAck.ok).toBe(true);
+
+      let hostSawAbort = false;
+      host.on('game:aborted', () => { hostSawAbort = true; });
+
+      const startAck: any = await new Promise((resolve) => host.emit('game:start', resolve));
+      expect(startAck.ok).toBe(true);
+
+      guest.disconnect();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const newSocket = connect();
+      try {
+        await waitConnected(newSocket);
+        const gotState = new Promise<any>((resolve) => newSocket.on('room:state', resolve));
+        const rejoinAck: any = await new Promise((resolve) =>
+          newSocket.emit('room:rejoin', { playerId: guestPlayerId }, resolve),
+        );
+        expect(rejoinAck).toEqual({ ok: true, playerId: guestPlayerId });
+
+        const state = await gotState;
+        expect(state.phase).toBe('hide'); // phase preserved BY NAME, not merely inferred from the player list
+        expect(state.players.map((p: any) => p.id)).toContain(guestPlayerId);
+      } finally {
+        newSocket.close();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(hostSawAbort).toBe(false);
+    } finally {
+      host.disconnect();
+      guest.close();
+    }
+  });
+
+  it('room:rejoin with a bogus playerId acks ROOM_NOT_FOUND (error case)', async () => {
+    const client = connect();
+    try {
+      await waitConnected(client);
+      const rejoinAck: any = await new Promise((resolve) =>
+        client.emit('room:rejoin', { playerId: '11111111-1111-4111-8111-111111111111' }, resolve),
+      );
+      expect(rejoinAck).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
+    } finally {
+      client.close();
+    }
+  });
+
+  it('room:rejoin acks BAD_PAYLOAD for a non-uuid playerId (error case)', async () => {
+    const client = connect();
+    try {
+      await waitConnected(client);
+      const ack = await new Promise((resolve) => client.emit('room:rejoin', { playerId: 'nope' }, resolve));
+      expect(ack).toEqual({ ok: false, code: 'BAD_PAYLOAD' });
+    } finally {
+      client.close();
+    }
+  });
+
+  it('a socket that already has an identity cannot room:rejoin as someone else (ALREADY_BOUND, boundary)', async () => {
+    const client = connect();
+    try {
+      await waitConnected(client);
+      const createAck: any = await new Promise((resolve) =>
+        client.emit('room:create', { nickname: 'x', roomName: 'y', isPrivate: false }, resolve),
+      );
+      expect(createAck.ok).toBe(true);
+
+      const rejoinAck: any = await new Promise((resolve) =>
+        client.emit('room:rejoin', { playerId: createAck.playerId }, resolve),
+      );
+      expect(rejoinAck).toEqual({ ok: false, code: 'ALREADY_BOUND' });
+    } finally {
+      client.close();
+    }
+  });
+
+  it('room:rejoin acks INTERNAL (not a stale success) when snapshotFor throws -- proves the ack is genuinely the terminal action', async () => {
+    const host = connect();
+    try {
+      await waitConnected(host);
+      const createAck: any = await new Promise((resolve) =>
+        host.emit('room:create', { nickname: 'h', roomName: 'z', isPrivate: false }, resolve),
+      );
+      const playerId: string = createAck.playerId;
+      host.disconnect();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const snapshotSpy = vi.spyOn(engine, 'snapshotFor').mockImplementation(() => {
+        throw new Error('injected crash');
+      });
+      const newSocket = connect();
+      try {
+        await waitConnected(newSocket);
+        const ack = await new Promise((resolve) => newSocket.emit('room:rejoin', { playerId }, resolve));
+        // If the implementation acked success BEFORE calling snapshotFor (the
+        // rejected D10 ordering), this ack would be {ok:true,...} instead --
+        // INTERNAL here proves snapshotFor ran, and threw, before the ack.
+        expect(ack).toEqual({ ok: false, code: 'INTERNAL' });
+      } finally {
+        newSocket.close();
+        snapshotSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    } finally {
+      host.close();
+    }
+  });
+
+  it("a superseded socket's delayed disconnect is a no-op: no markDisconnected call, no abort, and the new socket's room membership survives intact (re-plan round 1, G1)", async () => {
+    const host = connect();
+    const guestOriginal = connect();
+    try {
+      await Promise.all([waitConnected(host), waitConnected(guestOriginal)]);
+      const createAck: any = await new Promise((resolve) =>
+        host.emit('room:create', { nickname: 'host', roomName: '중복소켓검증', isPrivate: false }, resolve),
+      );
+      const code: string = createAck.code;
+      const guestJoinAck: any = await new Promise((resolve) =>
+        guestOriginal.emit('room:join', { code, nickname: 'guest' }, resolve),
+      );
+      expect(guestJoinAck.ok).toBe(true);
+      const guestPlayerId: string = guestJoinAck.playerId;
+
+      const bgAck: any = await new Promise((resolve) =>
+        host.emit(
+          'room:setBackground',
+          { background: { imageUrl: 'https://example.com/y.png', width: 1440, height: 2000 } },
+          resolve,
+        ),
+      );
+      expect(bgAck.ok).toBe(true);
+
+      const startAck: any = await new Promise((resolve) => host.emit('game:start', resolve));
+      expect(startAck.ok).toBe(true);
+
+      // guestOriginal's socket is still technically open (its own transport
+      // has not yet noticed the peer died) while a NEW socket rejoins early
+      // -- the early-reconnect race D17's guard exists for.
+      const guestNew = connect();
+      try {
+        await waitConnected(guestNew);
+        const rejoinAck: any = await new Promise((resolve) =>
+          guestNew.emit('room:rejoin', { playerId: guestPlayerId }, resolve),
+        );
+        expect(rejoinAck).toEqual({ ok: true, playerId: guestPlayerId });
+
+        const markDisconnectedSpy = vi.spyOn(engine, 'markDisconnected');
+        let sawAbortBeforeHostLeaves = false;
+        host.on('game:aborted', () => { sawAbortBeforeHostLeaves = true; });
+
+        // The now-superseded original socket's disconnect arrives late.
+        guestOriginal.disconnect();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(markDisconnectedSpy).not.toHaveBeenCalled();
+        expect(sawAbortBeforeHostLeaves).toBe(false);
+        markDisconnectedSpy.mockRestore();
+
+        // Prove guestNew's socket.io room membership (bindPlayer's
+        // socket.join) survived the stale disconnect untouched: an
+        // unrelated broadcast (host voluntarily leaving, which drops the
+        // room below MIN_PLAYERS and aborts) must still reach guestNew.
+        const guestNewGotState = new Promise<any>((resolve) => guestNew.on('room:state', resolve));
+        const hostLeaveAck: any = await new Promise((resolve) => host.emit('room:leave', resolve));
+        expect(hostLeaveAck).toEqual({ ok: true });
+        const stateAfterHostLeaves = await guestNewGotState;
+        expect(stateAfterHostLeaves.players.map((p: any) => p.id)).toContain(guestPlayerId);
+      } finally {
+        guestNew.close();
+      }
+    } finally {
+      host.close();
+      guestOriginal.close();
+    }
+  });
 });

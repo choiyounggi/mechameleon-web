@@ -70,6 +70,7 @@ export type Winner = 'hider' | 'seekers';
 export const HIDE_MS = 60_000;
 export const SEEK_MS = 120_000;
 export const RESULT_MS = 10_000;
+export const DISCONNECT_GRACE_MS = 30_000;
 export const LOCKOUT_MS = 3_000;
 export const MAX_PLAYERS = 8;
 export const MIN_PLAYERS = 2;
@@ -101,7 +102,8 @@ export type ErrorCode =
   | 'NEED_BACKGROUND'
   | 'NEED_PLAYERS'
   | 'WRONG_PASSWORD'
-  | 'INTERNAL';
+  | 'INTERNAL'
+  | 'ALREADY_BOUND';
 
 /** WS ack envelope: `{ok:true, ...}` on success, `{ok:false, code}` on failure. */
 export type Result<T extends object = object> =
@@ -211,6 +213,10 @@ export type SeekClickAck = Result<{ result: 'hit' | 'miss' | 'locked' | 'rejecte
 export const zSetHiderCountReq = z.object({ count: z.union([z.number().int(), z.null()]) });
 export type SetHiderCountReq = z.infer<typeof zSetHiderCountReq>;
 
+export const zRoomRejoinReq = z.object({ playerId: z.string().uuid() });
+export type RoomRejoinReq = z.infer<typeof zRoomRejoinReq>;
+export type RoomRejoinAck = Result<{ playerId: string }>;
+
 // ---- Socket.io event maps -----------------------------------------------------
 
 export interface ServerToClientEvents {
@@ -247,4 +253,5 @@ export interface ClientToServerEvents {
   'hide:update': (req: HideUpdateReq) => void;
   'hide:confirm': (ack: (res: Result) => void) => void;
   'seek:click': (req: SeekClickReq, ack: (res: SeekClickAck) => void) => void;
+  'room:rejoin': (req: RoomRejoinReq, ack: (res: RoomRejoinAck) => void) => void;
 }

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DISCONNECT_GRACE_MS,
   HIDE_MS,
   LOCKOUT_MS,
   MAX_PLAYERS,
@@ -8,10 +9,11 @@ import {
   RESULT_MS,
   SEEK_MS,
   type Background,
+  zRoomRejoinReq,
   zSetHiderCountReq,
 } from 'shared/protocol';
 import { INITIAL_FEET_Y } from 'shared/stickman';
-import { type Emit, RoomEngine, realScheduler } from '../src/engine/room-engine';
+import { type Emit, RoomEngine, type Scheduler, realScheduler } from '../src/engine/room-engine';
 
 interface RecordedEvent {
   target: string;
@@ -913,5 +915,270 @@ describe('RoomEngine — auto-return to lobby after the result countdown', () =>
     engine.start(hostId);
     engine.hideConfirm(hostId);
     expect(engine.click(otherSeekerId, 0, 0)).toBe('miss');
+  });
+});
+
+describe('RoomEngine — disconnect grace and rejoin (t3-reconnect)', () => {
+  it('rejects a payload without a valid uuid playerId (zod, error case)', () => {
+    expect(zRoomRejoinReq.safeParse({}).success).toBe(false);
+    expect(zRoomRejoinReq.safeParse({ playerId: 'not-a-uuid' }).success).toBe(false);
+  });
+
+  it('accepts a bare playerId and silently strips an extra code field (zod, normal + boundary)', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(zRoomRejoinReq.safeParse({ playerId: id }).success).toBe(true);
+    const withExtra = zRoomRejoinReq.safeParse({ playerId: id, code: 'ABCDEF' });
+    expect(withExtra.success).toBe(true);
+    expect(withExtra.success && withExtra.data).toEqual({ playerId: id });
+  });
+
+  it("leaves the player in room.players until the grace timer fires, then applies today's leave semantics (normal case)", () => {
+    const { engine, events } = createEngine();
+    const { ids } = setupRoom(engine, 3);
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[1], onExpire);
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS - 1);
+    expect(onExpire).not.toHaveBeenCalled();
+    const midState = events.filter((e) => e.event === 'room:state').at(-1)!.payload as any;
+    expect(midState.players.map((p: any) => p.id)).toContain(ids[1]);
+
+    vi.advanceTimersByTime(1);
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    const afterState = events.filter((e) => e.event === 'room:state').at(-1)!.payload as any;
+    expect(afterState.players.map((p: any) => p.id)).not.toContain(ids[1]);
+  });
+
+  it('rejoin before expiry cancels the timer, keeps the player, and returns the room code (normal case)', () => {
+    const { engine } = createEngine();
+    const { code, ids } = setupRoom(engine, 2);
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[1], onExpire);
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS - 1);
+    expect(engine.rejoin(ids[1])).toEqual({ ok: true, code });
+
+    vi.advanceTimersByTime(10_000);
+    expect(onExpire).not.toHaveBeenCalled();
+  });
+
+  it('rejoin after the grace has expired returns ROOM_NOT_FOUND (error case)', () => {
+    const { engine } = createEngine();
+    const { ids } = setupRoom(engine, 2);
+    engine.markDisconnected(ids[1], vi.fn());
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS);
+    expect(engine.rejoin(ids[1])).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
+  });
+
+  it('rejoin for a playerId that never existed returns ROOM_NOT_FOUND (error case)', () => {
+    const { engine } = createEngine();
+    setupRoom(engine, 2);
+    expect(engine.rejoin('11111111-1111-4111-8111-111111111111')).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
+  });
+
+  it('a second markDisconnected call while one is already pending does not extend the grace window (double disconnect)', () => {
+    const { engine } = createEngine();
+    const { ids } = setupRoom(engine, 2);
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[1], onExpire);
+    vi.advanceTimersByTime(10_000);
+    engine.markDisconnected(ids[1], vi.fn()); // second disconnect at t=10s -- must be a no-op
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS - 10_000 - 1);
+    expect(onExpire).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1); // t=30s from the FIRST disconnect, not t=40s
+    expect(onExpire).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not abort a hide-phase room during the grace, and applies the existing hider_left abort exactly at expiry (boundary)', () => {
+    const { engine, events } = createEngine(); // rng=0 -> sole hider = ids[0] (auto floor(3/2)=1)
+    const { hostId, ids } = setupRoom(engine, 3);
+    engine.start(hostId);
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[0], onExpire);
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS - 1);
+    expect(events.some((e) => e.event === 'game:aborted')).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.event === 'game:aborted' && (e.payload as any).reason === 'hider_left')).toBe(true);
+  });
+
+  it('does not abort a seek-phase room during the grace, and applies the existing seeker_left abort exactly at expiry (boundary)', () => {
+    const { engine, events } = createEngine(); // rng=0 -> hiders = ids[0], ids[1] (first 2 of 3)
+    const { hostId, ids } = setupRoom(engine, 3);
+    expect(engine.setHiderCount(hostId, 2)).toEqual({ ok: true });
+    engine.start(hostId);
+    engine.hideConfirm(ids[0]);
+    engine.hideConfirm(ids[1]); // both hiders confirmed -> enters seek
+    const seekerId = ids[2];
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(seekerId, onExpire);
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS - 1);
+    expect(events.some((e) => e.event === 'game:aborted')).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.event === 'game:aborted' && (e.payload as any).reason === 'seeker_left')).toBe(true);
+  });
+
+  it('deletes the room once the LAST pending grace expires, even when both players had disconnected (boundary)', () => {
+    const { engine } = createEngine();
+    const { code, ids } = setupRoom(engine, 2);
+    const onExpireA = vi.fn();
+    const onExpireB = vi.fn();
+
+    engine.markDisconnected(ids[0], onExpireA);
+    engine.markDisconnected(ids[1], onExpireB);
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS);
+    expect(onExpireA).toHaveBeenCalledTimes(1);
+    expect(onExpireB).toHaveBeenCalledTimes(1);
+    expect(engine.rejoin(ids[0])).toEqual({ ok: false, code: 'ROOM_NOT_FOUND' });
+    expect(engine.listRooms().some((r) => r.code === code)).toBe(false);
+  });
+
+  it("room teardown (last-player delete) cancels a still-pending grace timer via the scheduler, not just the callback's own re-check (cleanup)", () => {
+    const clearSpy = vi.fn();
+    const scheduler: Scheduler = {
+      setTimeout: (fn, ms) => realScheduler.setTimeout(fn, ms),
+      clearTimeout: (handle) => {
+        clearSpy(handle);
+        realScheduler.clearTimeout(handle);
+      },
+    };
+    const engine = new RoomEngine({ scheduler, rng: () => 0, emit: () => {} });
+    const { ids } = setupRoom(engine, 2);
+
+    engine.markDisconnected(ids[0], vi.fn());
+    engine.leave(ids[1]); // room.players -> [ids[0]], length 1, not yet empty
+    engine.leave(ids[0]); // room.players -> [], length 0 -> teardown runs with ids[0]'s grace still pending
+    expect(clearSpy).toHaveBeenCalledTimes(1); // the ONLY clearTimeout call possible here is pendingLeaves' (no hide/seek/result timer was ever started)
+  });
+
+  it('shutdown cancels a still-pending grace timer via the scheduler (cleanup)', () => {
+    const clearSpy = vi.fn();
+    const scheduler: Scheduler = {
+      setTimeout: (fn, ms) => realScheduler.setTimeout(fn, ms),
+      clearTimeout: (handle) => {
+        clearSpy(handle);
+        realScheduler.clearTimeout(handle);
+      },
+    };
+    const engine = new RoomEngine({ scheduler, rng: () => 0, emit: () => {} });
+    const { ids } = setupRoom(engine, 2); // lobby: no hide/seek/result timer exists
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[1], onExpire);
+    engine.shutdown();
+    expect(clearSpy).toHaveBeenCalledTimes(1); // the only timer that can be cleared here is ids[1]'s grace
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS);
+    expect(onExpire).not.toHaveBeenCalled();
+  });
+
+  it('a grace pending when the round ends (enterResult) still expires 30 s later and removes the player (regression: phase transitions must not cancel grace)', () => {
+    const { engine, events } = createEngine(); // rng=0, 3 players -> sole hider = ids[0]
+    const { code, hostId, ids } = setupRoom(engine, 3);
+    engine.start(hostId);
+    engine.hideConfirm(ids[0]); // -> seek
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[2], onExpire);
+    const { x, y } = hitCoordFor(0, 1);
+    expect(engine.click(ids[1], x, y)).toBe('hit'); // last hider found -> enterResult
+    expect(events.some((e) => e.event === 'game:end')).toBe(true);
+
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS);
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    expect(engine.listRooms().find((r) => r.code === code)!.playerCount).toBe(2);
+  });
+
+  it('a grace pending when the round aborts (resetToLobby) still expires 30 s later and removes the player (regression: phase transitions must not cancel grace)', () => {
+    const { engine, events } = createEngine(); // rng=0, 3 players -> sole hider = ids[0]
+    const { code, hostId, ids } = setupRoom(engine, 3);
+    engine.start(hostId);
+    const onExpire = vi.fn();
+
+    engine.markDisconnected(ids[2], onExpire);
+    engine.leave(ids[0]); // sole hider hard-leaves -> hider_left abort -> resetToLobby
+    expect(events.some((e) => e.event === 'game:aborted' && (e.payload as any).reason === 'hider_left')).toBe(true);
+
+    vi.advanceTimersByTime(DISCONNECT_GRACE_MS);
+    expect(onExpire).toHaveBeenCalledTimes(1);
+    expect(engine.listRooms().find((r) => r.code === code)!.playerCount).toBe(1);
+  });
+});
+
+describe('RoomEngine — snapshotFor (rejoin resync, t3-reconnect)', () => {
+  it('lobby phase: sends only room:state (normal case)', () => {
+    const { engine, events } = createEngine();
+    const { hostId } = setupRoom(engine, 2);
+    events.length = 0; // clear setup noise
+
+    engine.snapshotFor(hostId);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ target: hostId, event: 'room:state' });
+  });
+
+  it('hide phase, hider variant: sends game:role(hider) + phase:hide with the live stickman, then room:state last (normal case)', () => {
+    const { engine, events } = createEngine(); // rng=0 -> hider = ids[0]
+    const { hostId, ids } = setupRoom(engine, 2);
+    engine.start(hostId);
+    engine.hideUpdate(ids[0], { x: 42, y: 7, scale: 1, strokes: [] }); // moves the hider's live stickman
+    events.length = 0;
+
+    engine.snapshotFor(ids[0]);
+    expect(events.map((e) => e.event)).toEqual(['game:role', 'phase:hide', 'room:state']); // room:state LAST, like start(): the client mounts on room:state
+    expect(events[0].payload).toEqual({ role: 'hider' });
+    expect((events[1].payload as any).stickman).toMatchObject({ x: 42, y: 7 });
+  });
+
+  it('hide phase, seeker variant: sends game:role(seeker) + phase:hideWait, then room:state last (normal case)', () => {
+    const { engine, events } = createEngine();
+    const { hostId, ids } = setupRoom(engine, 2);
+    engine.start(hostId);
+    events.length = 0;
+
+    engine.snapshotFor(ids[1]);
+    expect(events.map((e) => e.event)).toEqual(['game:role', 'phase:hideWait', 'room:state']);
+    expect(events[0].payload).toEqual({ role: 'seeker' });
+  });
+
+  it('seek phase: sends game:role + phase:seek identical to the SAME live buildSeekStickmen shape, then room:state last (normal case)', () => {
+    const { engine, events } = createEngine();
+    const { hostId, ids } = setupRoom(engine, 2);
+    engine.start(hostId);
+    engine.hideConfirm(ids[0]); // enters seek, fires the LIVE phase:seek broadcast
+    const liveSeekPayload = events.find((e) => e.event === 'phase:seek')!.payload;
+    events.length = 0;
+
+    engine.snapshotFor(ids[1]); // the seeker reconnecting
+    expect(events.map((e) => e.event)).toEqual(['game:role', 'phase:seek', 'room:state']); // room:state LAST, like beginSeekPhase
+    expect(events[0].payload).toEqual({ role: 'seeker' });
+    expect(events[1].payload).toEqual(liveSeekPayload); // identical shape/colorCount -- not hand-duplicated
+  });
+
+  it('result phase: sends only room:state (normal case, last phase variant)', () => {
+    const { engine, events } = createEngine();
+    const { hostId, ids } = setupRoom(engine, 2);
+    engine.start(hostId);
+    engine.hideConfirm(ids[0]);
+    const { x, y } = hitCoordFor(0, 1); // hits the sole hider ids[0] -> all_found -> result
+    engine.click(ids[1], x, y);
+    events.length = 0;
+
+    engine.snapshotFor(ids[1]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ target: ids[1], event: 'room:state' });
+  });
+
+  it('is a silent no-op for a playerId with no room (error/boundary case)', () => {
+    const { engine, events } = createEngine();
+    setupRoom(engine, 2);
+    events.length = 0;
+
+    expect(() => engine.snapshotFor('11111111-1111-4111-8111-111111111111')).not.toThrow();
+    expect(events).toHaveLength(0);
   });
 });

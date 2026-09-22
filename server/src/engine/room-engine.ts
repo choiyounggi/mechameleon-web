@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   type Background,
+  DISCONNECT_GRACE_MS,
   HIDE_MS,
   LOCKOUT_MS,
   MAX_PLAYERS,
@@ -66,6 +67,7 @@ interface Room {
   hideTimer: unknown | null;
   seekTimer: unknown | null;
   resultTimer: unknown | null;
+  pendingLeaves: Map<string, unknown>; // playerId -> grace-timer handle, while a disconnect grace is pending
 }
 
 /**
@@ -111,6 +113,7 @@ export class RoomEngine {
       hideTimer: null,
       seekTimer: null,
       resultTimer: null,
+      pendingLeaves: new Map(),
     };
     this.rooms.set(code, room);
     this.playerRooms.set(playerId, code);
@@ -148,6 +151,7 @@ export class RoomEngine {
 
     if (room.players.length === 0) {
       this.clearTimers(room);
+      this.clearPendingLeaves(room);
       this.rooms.delete(room.code);
       return;
     }
@@ -195,6 +199,90 @@ export class RoomEngine {
 
     // lobby/result phase: nothing to reconcile beyond removal.
     this.broadcastState(room);
+  }
+
+  /**
+   * Starts (or no-ops if one is already pending) a `DISCONNECT_GRACE_MS`
+   * grace timer for `playerId`: the player stays in `room.players` until
+   * the timer fires, at which point today's `leave(playerId)` runs
+   * unchanged and `onExpire()` runs so the socket layer can clean up its
+   * own maps. A second call while one is already pending does NOT reset
+   * or extend the window. Rejoining before the timer fires (`rejoin`)
+   * cancels it.
+   */
+  markDisconnected(playerId: string, onExpire: () => void): void {
+    const room = this.findRoomByPlayer(playerId);
+    if (!room) return;
+    if (room.pendingLeaves.has(playerId)) return; // already pending -- do not extend the window
+
+    const code = room.code;
+    const timer = this.scheduler.setTimeout(() => {
+      const current = this.rooms.get(code);
+      if (!current || !current.pendingLeaves.has(playerId)) return; // canceled by rejoin, or room gone
+      current.pendingLeaves.delete(playerId);
+      this.leave(playerId);
+      onExpire();
+    }, DISCONNECT_GRACE_MS);
+    room.pendingLeaves.set(playerId, timer);
+  }
+
+  /**
+   * Cancels `playerId`'s pending grace timer, if any, and returns the
+   * room code the caller must rebind to. `ROOM_NOT_FOUND` covers both an
+   * expired grace (leave already ran) and an unknown playerId -- there is
+   * no client-supplied room code to fall back on (the request carries
+   * only `playerId`), so `findRoomByPlayer` is the sole source of truth.
+   */
+  rejoin(playerId: string): Result<{ code: string }> {
+    const room = this.findRoomByPlayer(playerId);
+    if (!room) return { ok: false, code: 'ROOM_NOT_FOUND' };
+
+    const pending = room.pendingLeaves.get(playerId);
+    if (pending !== undefined) {
+      this.scheduler.clearTimeout(pending);
+      room.pendingLeaves.delete(playerId);
+    }
+    return { ok: true, code: room.code };
+  }
+
+  /**
+   * Re-sends to ONE player exactly the events a fresh client needs for
+   * the room's CURRENT phase (used by the socket layer right after a
+   * successful `rejoin`). Always `room:state`; hide adds `game:role` +
+   * (`phase:hide` with that hider's live stickman, or `phase:hideWait`
+   * for a seeker); seek adds `game:role` + `phase:seek` built by the same
+   * `buildSeekStickmen` the live broadcast uses; lobby/result send
+   * `room:state` only. `room:state` goes LAST, like start()/beginSeekPhase:
+   * the client mounts the phase screen on room:state and reads the role and
+   * phase payload at mount time. A silent no-op if `playerId` has no room.
+   */
+  snapshotFor(playerId: string): void {
+    const room = this.findRoomByPlayer(playerId);
+    if (!room) return;
+
+    if (room.phase === 'hide') {
+      const isHider = room.hiderIds.has(playerId);
+      this.emit(playerId, 'game:role', { role: isHider ? 'hider' : 'seeker' });
+      if (isHider) {
+        this.emit(playerId, 'phase:hide', {
+          background: room.background!,
+          endsAt: room.endsAt!,
+          stickman: room.stickmen.get(playerId)!,
+        });
+      } else {
+        this.emit(playerId, 'phase:hideWait', { endsAt: room.endsAt! });
+      }
+    } else if (room.phase === 'seek') {
+      const isHider = room.hiderIds.has(playerId);
+      this.emit(playerId, 'game:role', { role: isHider ? 'hider' : 'seeker' });
+      this.emit(playerId, 'phase:seek', {
+        background: room.background!,
+        stickmen: this.buildSeekStickmen(room),
+        endsAt: room.endsAt!,
+      });
+    }
+
+    this.emit(playerId, 'room:state', this.toPublic(room));
   }
 
   setBackground(playerId: string, background: Background): Result {
@@ -339,6 +427,7 @@ export class RoomEngine {
   shutdown(): void {
     for (const room of this.rooms.values()) {
       this.clearTimers(room);
+      this.clearPendingLeaves(room);
     }
   }
 
@@ -398,6 +487,18 @@ export class RoomEngine {
     return code ? this.rooms.get(code) : undefined;
   }
 
+  private buildSeekStickmen(room: Room): SeekStickman[] {
+    return [...room.hiderIds].map((id) => {
+      const stickman = room.stickmen.get(id)!;
+      return {
+        playerId: id,
+        nickname: room.players.find((p) => p.id === id)!.nickname,
+        stickman,
+        colorCount: distinctColorCount(stickman.strokes),
+      };
+    });
+  }
+
   private beginSeekPhase(room: Room): void {
     if (room.hideTimer !== null) {
       this.scheduler.clearTimeout(room.hideTimer);
@@ -407,18 +508,9 @@ export class RoomEngine {
     room.endsAt = Date.now() + SEEK_MS;
     room.seekTimer = this.scheduler.setTimeout(() => this.onSeekExpire(room.code), SEEK_MS);
 
-    const stickmen: SeekStickman[] = [...room.hiderIds].map((id) => {
-      const stickman = room.stickmen.get(id)!;
-      return {
-        playerId: id,
-        nickname: room.players.find((p) => p.id === id)!.nickname,
-        stickman,
-        colorCount: distinctColorCount(stickman.strokes),
-      };
-    });
     this.emit('all', 'phase:seek', {
       background: room.background!,
-      stickmen,
+      stickmen: this.buildSeekStickmen(room),
       endsAt: room.endsAt,
     });
     this.broadcastState(room);
@@ -455,6 +547,18 @@ export class RoomEngine {
       this.scheduler.clearTimeout(room.resultTimer);
       room.resultTimer = null;
     }
+  }
+
+  /**
+   * Cancels every pending disconnect-grace timer. Room teardown only (last
+   * player gone, shutdown) -- NOT part of clearTimers, which also runs on every
+   * game end/abort, where a pending grace must keep running.
+   */
+  private clearPendingLeaves(room: Room): void {
+    for (const timer of room.pendingLeaves.values()) {
+      this.scheduler.clearTimeout(timer);
+    }
+    room.pendingLeaves.clear();
   }
 
   /** Back to the waiting room: wipes per-game state, keeps players/background/hiderCount. */
