@@ -106,21 +106,23 @@ describe('POST /api/capture', () => {
     expect(res.body.error.code).toBe('INVALID_URL');
   });
 
-  it('maps a capture failure to 502 CAPTURE_FAILED', async () => {
+  // 4xx on purpose: Cloudflare swallows an origin 502 body, so a 5xx here
+  // would never deliver the error code to the client through the tunnel.
+  it('maps a capture failure to 422 CAPTURE_FAILED', async () => {
     const app = appWith(fakeScreenshotter(new Error('navigation timeout')));
 
     const res = await request(app).post('/api/capture').send({ url: 'https://example.com' });
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('CAPTURE_FAILED');
   });
 
-  it('maps a non-2xx answer from the target page to 502 TARGET_HTTP_ERROR carrying the status', async () => {
+  it('maps a non-2xx answer from the target page to 422 TARGET_HTTP_ERROR carrying the status', async () => {
     const app = appWith(fakeScreenshotter(new TargetHttpError(403)));
 
     const res = await request(app).post('/api/capture').send({ url: 'https://example.com' });
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('TARGET_HTTP_ERROR');
     expect(res.body.error.message).toContain('403');
   });

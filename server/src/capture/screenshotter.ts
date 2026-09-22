@@ -62,7 +62,7 @@ function assertOk(response: { status(): number } | null): void {
 }
 
 // D3: one retry with a shorter timeout and a looser wait condition; if that
-// also fails the error propagates to the caller (mapped to 502 CAPTURE_FAILED).
+// also fails the error propagates to the caller (mapped to 422 CAPTURE_FAILED).
 // A non-2xx answer is final — the server has spoken — so it is not retried.
 export async function gotoWithRetry(page: Navigable, url: string): Promise<void> {
   let response: { status(): number } | null;

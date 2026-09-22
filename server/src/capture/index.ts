@@ -111,11 +111,14 @@ export function createCaptureRouter(s: Screenshotter): Router {
     try {
       result = await s.capture(parsed.data.url);
     } catch (err) {
+      // 422, not 502: Cloudflare (the public tunnel) replaces an origin 502/504
+      // body with its own plain-text error page, so the JSON code below never
+      // reached the client through mecha.korea-data.cloud. 4xx passes through.
       if (err instanceof TargetHttpError) {
-        res.status(502).json({ error: { code: 'TARGET_HTTP_ERROR', message: err.message } });
+        res.status(422).json({ error: { code: 'TARGET_HTTP_ERROR', message: err.message } });
         return;
       }
-      res.status(502).json({ error: { code: 'CAPTURE_FAILED', message: 'failed to capture the page' } });
+      res.status(422).json({ error: { code: 'CAPTURE_FAILED', message: 'failed to capture the page' } });
       return;
     }
 
