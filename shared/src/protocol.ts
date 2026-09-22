@@ -100,7 +100,8 @@ export type ErrorCode =
   | 'BAD_COUNT'
   | 'NEED_BACKGROUND'
   | 'NEED_PLAYERS'
-  | 'WRONG_PASSWORD';
+  | 'WRONG_PASSWORD'
+  | 'INTERNAL';
 
 /** WS ack envelope: `{ok:true, ...}` on success, `{ok:false, code}` on failure. */
 export type Result<T extends object = object> =

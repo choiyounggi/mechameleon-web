@@ -69,6 +69,20 @@ npm run build   # 타입체크 + 클라이언트 번들
 
 Playwright 기반 E2E 자동 플레이 스크립트도 포함되어 있으며(실행 후 `e2e-videos/` 참고), 위 데모 미디어가 바로 그 산출물입니다.
 
+## 프로덕션 실행
+
+수동 실행(모든 머신): `PORT=3101 npm run start --prefix server` (`PORT=3101 npx tsx server/src/index.ts`와 동일).
+
+상시 구동 서버(macOS, 권장):
+
+1. **설치**: `./ops/launchd/install.sh`가 `ops/launchd/*.template`에서 두 plist(서버 + cloudflared)를 렌더링합니다 — `node`/`cloudflared`의 절대 경로와 이 저장소의 경로를 자동으로 해석해 `~/Library/LaunchAgents`에 복사합니다. 직접 로드하지는 않습니다.
+2. **부트스트랩**: `install.sh`가 출력하는 `launchctl bootstrap gui/$(id -u) ...`, `launchctl kickstart ...` 명령을 plist마다 한 번씩 실행하세요.
+3. **로그**: `~/Library/Logs/mechameleon/{server,cloudflared}.{out,err}.log`.
+4. **재시작**: `launchctl kickstart -k gui/$(id -u)/com.mechameleon.server` (`-k`는 실행 중인 에이전트를 재시작합니다); 크래시 시에는 `KeepAlive`가 자동으로 재시작합니다.
+5. **제거**: `./ops/launchd/uninstall.sh`가 `launchctl bootout` 명령을 출력한 뒤, 확인(또는 `--yes`) 후 렌더링된 plist를 제거합니다.
+
+포트는 `PORT=<port> ./ops/launchd/install.sh`, cloudflared 설정 경로는 `CLOUDFLARED_CONFIG=<path> ./ops/launchd/install.sh`로 재정의할 수 있습니다.
+
 ## 참고 및 한계
 
 - 의도적으로 단일 서버 인스턴스(메모리 방 상태) — 사무실 규모용이지 인터넷 규모용이 아닙니다.

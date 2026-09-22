@@ -3,24 +3,27 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { Server } from 'socket.io';
 import { io as ioClient, type Socket as ClientSocket } from 'socket.io-client';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ClientToServerEvents, ServerToClientEvents } from 'shared/protocol';
 import captureRouter from '../src/capture/index';
+import { healthzHandler } from '../src/lifecycle';
 import { registerSocketHandlers } from '../src/sockets';
 
 describe('server smoke test (in-process HTTP + socket.io)', () => {
   let httpServer: ReturnType<typeof createServer>;
   let io: Server<ClientToServerEvents, ServerToClientEvents>;
   let baseUrl: string;
+  let engine: ReturnType<typeof registerSocketHandlers>;
 
   beforeAll(async () => {
     const app = express();
     app.use(express.json());
     app.use('/api', captureRouter);
+    app.get('/healthz', healthzHandler);
 
     httpServer = createServer(app);
     io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer);
-    registerSocketHandlers(io);
+    engine = registerSocketHandlers(io);
 
     await new Promise<void>((resolve) => httpServer.listen(0, resolve));
     const { port } = httpServer.address() as AddressInfo;
@@ -241,4 +244,36 @@ describe('server smoke test (in-process HTTP + socket.io)', () => {
     }
   });
 
+  it('GET /healthz responds 200 { ok: true }', async () => {
+    const res = await fetch(`${baseUrl}/healthz`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('a throwing handler acks INTERNAL, the process stays up, and a second socket still works (crash guard)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const badClient = connect();
+    const goodClient = connect();
+    try {
+      await Promise.all([waitConnected(badClient), waitConnected(goodClient)]);
+      const createSpy = vi.spyOn(engine, 'createRoom').mockImplementation(() => {
+        throw new Error('injected crash');
+      });
+
+      const badAck = await new Promise((resolve) =>
+        badClient.emit('room:create', { nickname: 'bad', roomName: 'x', isPrivate: false }, resolve),
+      );
+      expect(badAck).toEqual({ ok: false, code: 'INTERNAL' });
+      createSpy.mockRestore();
+
+      const goodAck: any = await new Promise((resolve) =>
+        goodClient.emit('room:create', { nickname: 'good', roomName: 'y', isPrivate: false }, resolve),
+      );
+      expect(goodAck.ok).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+      badClient.close();
+      goodClient.close();
+    }
+  });
 });

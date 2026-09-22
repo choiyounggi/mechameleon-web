@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mechameleon.cloudflared</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__CLOUDFLARED__</string>
+    <string>tunnel</string>
+    <string>--config</string>
+    <string>__CONFIG__</string>
+    <string>run</string>
+    <string>mecha</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/mechameleon/cloudflared.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/mechameleon/cloudflared.err.log</string>
+</dict>
+</plist>

@@ -69,6 +69,20 @@ npm run build   # type-check + client bundle
 
 The repo also contains scripted Playwright E2E playthroughs (see `e2e-videos/` after running them) — the demo media above comes straight from them.
 
+## Production run
+
+Manual run (any machine): `PORT=3101 npm run start --prefix server` (equivalent to `PORT=3101 npx tsx server/src/index.ts`).
+
+Supervised run (macOS, recommended for an always-on host):
+
+1. **Install**: `./ops/launchd/install.sh` renders both plists (server + cloudflared) from `ops/launchd/*.template` — resolving `node`'s and `cloudflared`'s absolute paths and this repo's own path automatically — and copies them into `~/Library/LaunchAgents`. It never loads them itself.
+2. **Bootstrap**: run the `launchctl bootstrap gui/$(id -u) ...` and `launchctl kickstart ...` commands `install.sh` prints, once per plist.
+3. **Logs**: `~/Library/Logs/mechameleon/{server,cloudflared}.{out,err}.log`.
+4. **Restart**: `launchctl kickstart -k gui/$(id -u)/com.mechameleon.server` (`-k` restarts an already-running agent); `KeepAlive` also restarts it automatically if it crashes.
+5. **Uninstall**: `./ops/launchd/uninstall.sh` prints the `launchctl bootout` commands, then removes the rendered plists once you confirm (or pass `--yes`).
+
+Override the port with `PORT=<port> ./ops/launchd/install.sh`, and the cloudflared config path with `CLOUDFLARED_CONFIG=<path> ./ops/launchd/install.sh`.
+
 ## Notes & limits
 
 - Single server instance by design (in-memory rooms) — office scale, not internet scale.

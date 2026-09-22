@@ -11,7 +11,6 @@ import {
 } from 'shared/protocol';
 import { type Emit, RoomEngine, type Scheduler, realRng } from './engine/room-engine';
 
-// contract: t1-crash-guard owns the implementation
 // Wraps a socket.io listener so a synchronous throw is logged and, when the
 // event carries an ack (always the last argument), answered with
 // { ok: false, code: 'INTERNAL' } instead of killing the process.
@@ -20,9 +19,18 @@ export function safeHandler<Args extends unknown[]>(
   event: string,
   handler: (...args: Args) => void,
 ): (...args: Args) => void {
-  throw new Error(`contract stub: safeHandler(${event}) — t1-crash-guard implements this; ${typeof handler}`);
+  return (...args: Args) => {
+    try {
+      handler(...args);
+    } catch (err) {
+      console.error(`[handler] ${event} threw`, err);
+      const maybeAck = args[args.length - 1];
+      if (typeof maybeAck === 'function') {
+        (maybeAck as (result: unknown) => void)({ ok: false, code: 'INTERNAL' });
+      }
+    }
+  };
 }
-
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -93,7 +101,7 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       socket.join(roomCode);
     }
 
-    socket.on('room:create', (req, ack) => {
+    socket.on('room:create', safeHandler('room:create', (req, ack) => {
       const parsed = zRoomCreateReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
 
@@ -109,9 +117,9 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       // player/room, so nothing receives it (see F2, review r1) -- resend now.
       withRoomContext(code, () => engine.broadcastRoom(code));
       ack({ ok: true, code, playerId });
-    });
+    }));
 
-    socket.on('room:join', (req, ack) => {
+    socket.on('room:join', safeHandler('room:join', (req, ack) => {
       const parsed = zRoomJoinReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
 
@@ -126,53 +134,53 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
         withRoomContext(parsed.data.code, () => engine.broadcastRoom(parsed.data.code));
       }
       ack(result);
-    });
+    }));
 
-    socket.on('rooms:list', (ack) => {
+    socket.on('rooms:list', safeHandler('rooms:list', (ack) => {
       ack({ ok: true, rooms: engine.listRooms() });
-    });
+    }));
 
-    socket.on('room:setBackground', (req, ack) => {
+    socket.on('room:setBackground', safeHandler('room:setBackground', (req, ack) => {
       const parsed = zSetBackgroundReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
       if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
 
       const playerId = myPlayerId;
       ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.setBackground(playerId, parsed.data.background)));
-    });
+    }));
 
-    socket.on('room:setHiderCount', (req, ack) => {
+    socket.on('room:setHiderCount', safeHandler('room:setHiderCount', (req, ack) => {
       const parsed = zSetHiderCountReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
       if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
 
       const playerId = myPlayerId;
       ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.setHiderCount(playerId, parsed.data.count)));
-    });
+    }));
 
-    socket.on('game:start', (ack) => {
+    socket.on('game:start', safeHandler('game:start', (ack) => {
       if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
 
       const playerId = myPlayerId;
       ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.start(playerId)));
-    });
+    }));
 
-    socket.on('hide:update', (req) => {
+    socket.on('hide:update', safeHandler('hide:update', (req) => {
       const parsed = zHideUpdateReq.safeParse(req);
       if (!parsed.success || !myPlayerId) return;
 
       const playerId = myPlayerId;
       withRoomContext(roomOfPlayer.get(playerId), () => engine.hideUpdate(playerId, parsed.data.stickman));
-    });
+    }));
 
-    socket.on('hide:confirm', (ack) => {
+    socket.on('hide:confirm', safeHandler('hide:confirm', (ack) => {
       if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
 
       const playerId = myPlayerId;
       ack(withRoomContext(roomOfPlayer.get(playerId), () => engine.hideConfirm(playerId)));
-    });
+    }));
 
-    socket.on('seek:click', (req, ack) => {
+    socket.on('seek:click', safeHandler('seek:click', (req, ack) => {
       const parsed = zSeekClickReq.safeParse(req);
       if (!parsed.success) return ack({ ok: false, code: 'BAD_PAYLOAD' });
       if (!myPlayerId) return ack({ ok: false, code: 'ROOM_NOT_FOUND' });
@@ -182,9 +190,9 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
         engine.click(playerId, parsed.data.x, parsed.data.y),
       );
       ack({ ok: true, result });
-    });
+    }));
 
-    socket.on('room:leave', (ack) => {
+    socket.on('room:leave', safeHandler('room:leave', (ack) => {
       if (!myPlayerId) return ack({ ok: true });
       const playerId = myPlayerId;
       const roomCode = roomOfPlayer.get(playerId);
@@ -197,16 +205,16 @@ export function registerSocketHandlers(io: IoServer): RoomEngine {
       roomOfPlayer.delete(playerId);
       myPlayerId = undefined;
       ack({ ok: true });
-    });
+    }));
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', safeHandler('disconnect', () => {
       if (!myPlayerId) return;
       const playerId = myPlayerId;
       const roomCode = roomOfPlayer.get(playerId);
       withRoomContext(roomCode, () => engine.leave(playerId));
       playerSockets.delete(playerId);
       roomOfPlayer.delete(playerId);
-    });
+    }));
   });
 
   return engine;
