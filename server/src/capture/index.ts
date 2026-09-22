@@ -8,6 +8,7 @@ import { imageSize } from 'image-size';
 import multer from 'multer';
 import { zCaptureReq, type Background } from 'shared/protocol';
 import { playwrightScreenshotter, withConcurrencyLimit, type Screenshotter } from './screenshotter';
+import { isPublicUrl } from './url-guard';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCREENSHOTS_DIR = path.join(__dirname, '../../data/screenshots');
@@ -97,8 +98,15 @@ export function createCaptureRouter(s: Screenshotter): Router {
       return;
     }
 
-    // D9: no SSRF/private-IP filtering here -- accepted risk for this internal
-    // LAN tool (brief-level decision), scheme check above is the only gate.
+    // The server is reachable from the internet, so a target that resolves to
+    // this host or its LAN is refused before the browser ever navigates.
+    // playwrightScreenshotter re-checks every request it makes, so a redirect
+    // or sub-resource cannot sneak past this first gate.
+    if (!(await isPublicUrl(parsedUrl))) {
+      res.status(400).json({ error: { code: 'INVALID_URL', message: 'private or local addresses are not allowed' } });
+      return;
+    }
+
     let result;
     try {
       result = await s.capture(parsed.data.url);

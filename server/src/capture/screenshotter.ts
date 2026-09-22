@@ -1,4 +1,5 @@
 import { chromium, type Browser } from 'playwright';
+import { isPublicUrl } from './url-guard';
 
 export interface CaptureResult {
   png: Buffer;
@@ -49,6 +50,64 @@ export async function gotoWithRetry(page: Navigable, url: string): Promise<void>
   }
 }
 
+const MAX_REDIRECT_HOPS = 5;
+
+// Structural subsets of playwright's Route / APIResponse, so guardRoute can be
+// driven by fakes in tests the same way gotoWithRetry is.
+export interface HopResponse {
+  status(): number;
+  headers(): { [key: string]: string };
+  body(): Promise<Buffer>;
+}
+export interface HopFetch {
+  (url: string, init: { method: string; headers: { [key: string]: string }; data?: Buffer }): Promise<HopResponse>;
+}
+export interface GuardableRoute {
+  request(): { url(): string; method(): string; headers(): { [key: string]: string }; postDataBuffer(): Buffer | null };
+  abort(errorCode: 'blockedbyclient' | 'failed'): Promise<void>;
+  fulfill(options: { status: number; headers: { [key: string]: string }; body: Buffer }): Promise<void>;
+}
+
+// Every hop of a redirect chain is checked with isPublicUrl before it is
+// fetched, because the browser would otherwise follow a 3xx into this host or
+// the LAN without ever consulting route(). The browser is never handed a
+// redirect of its own to follow (that follow-up would be unrouted too): the
+// final response is served for the original request. Relative links then
+// resolve against the entry URL instead of the final one, and each of those
+// simply walks the same guarded chain again.
+export async function guardRoute(route: GuardableRoute, fetch: HopFetch): Promise<void> {
+  try {
+    const request = route.request();
+    let url = request.url();
+    for (let hop = 0; ; hop++) {
+      if (!(await isPublicUrl(new URL(url)))) {
+        return await route.abort('blockedbyclient');
+      }
+      const response = await fetch(url, {
+        method: request.method(),
+        headers: request.headers(),
+        data: request.postDataBuffer() ?? undefined,
+      });
+      const status = response.status();
+      const headers = { ...response.headers() };
+      const location = headers['location'];
+      if (status < 300 || status > 399 || !location) {
+        // The fetch already decoded the body; a stale content-encoding would
+        // make Chromium try to decode plaintext and drop the resource.
+        delete headers['content-encoding'];
+        delete headers['content-length'];
+        return await route.fulfill({ status, headers, body: await response.body() });
+      }
+      if (hop >= MAX_REDIRECT_HOPS) {
+        return await route.abort('blockedbyclient');
+      }
+      url = new URL(location, url).toString();
+    }
+  } catch {
+    await route.abort('failed').catch(() => undefined);
+  }
+}
+
 // D4: pure clamp, extracted so the height-cap arithmetic is unit-testable
 // without a real page.
 export function clampCaptureHeight(scrollHeight: number): number {
@@ -61,8 +120,20 @@ export const playwrightScreenshotter: Screenshotter = {
     const context = await browser.newContext({
       viewport: { width: VIEWPORT_WIDTH, height: MIN_HEIGHT },
       deviceScaleFactor: 1,
+      // A service worker's fetches bypass context.route() entirely.
+      serviceWorkers: 'block',
     });
     try {
+      // The router already vetted the entry URL; this covers what happens
+      // after it -- redirects, iframes, images -- so a public page cannot pull
+      // this host's or the LAN's services into the screenshot. Chromium never
+      // asks route() about a redirect hop, so guardRoute follows redirects
+      // itself. WebSockets are outside route() too; a capture target has no
+      // business opening one.
+      await context.routeWebSocket('**', (ws) => ws.close());
+      await context.route('**/*', (route) =>
+        guardRoute(route, (url, init) => context.request.fetch(url, { ...init, maxRedirects: 0 })),
+      );
       const page = await context.newPage();
       await gotoWithRetry(page, url);
 

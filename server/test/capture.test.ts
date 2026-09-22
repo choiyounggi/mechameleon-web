@@ -85,6 +85,18 @@ describe('POST /api/capture', () => {
     expect(res.body.error.code).toBe('INVALID_URL');
   });
 
+  it.each(['http://127.0.0.1:8642/', 'http://localhost:3000/', 'http://[::1]/', 'http://192.168.0.1/'])(
+    'rejects the private/local target %s with 400 INVALID_URL before calling the screenshotter',
+    async (url) => {
+      const app = appWith(fakeScreenshotter(new Error('should not be called')));
+
+      const res = await request(app).post('/api/capture').send({ url });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('INVALID_URL');
+    },
+  );
+
   it('rejects a payload that fails zCaptureReq validation with 400 INVALID_URL', async () => {
     const app = appWith(fakeScreenshotter(new Error('should not be called')));
 
