@@ -1,5 +1,6 @@
 import { chromium, type Browser } from 'playwright';
 import { isPublicUrl } from './url-guard';
+import { registerCloser } from '../lifecycle';
 
 export interface CaptureResult {
   png: Buffer;
@@ -25,13 +26,73 @@ declare const window: { innerHeight: number; scrollTo(x: number, y: number): voi
 
 // D2: single chromium instance for the process lifetime, lazily launched and
 // cached on the module scope so concurrent first-callers share one launch.
+// A rejected launch or the live browser's 'disconnected' event resets the
+// cache (identity-guarded, D3) so the next call relaunches instead of
+// poisoning every later capture. `launch`/`closerRegistrar` are test-only
+// injection seams -- production always starts at their real defaults.
+let launch: () => Promise<Browser> = () => chromium.launch();
+let closerRegistrar: (name: string, close: () => Promise<void>) => void = registerCloser;
 let browserPromise: Promise<Browser> | null = null;
+let closerRegistered = false;
+
+export function _setBrowserLauncherForTests(fn: () => Promise<Browser>): void {
+  launch = fn;
+}
+
+export function _setCloserRegistrarForTests(
+  fn: (name: string, close: () => Promise<void>) => void,
+): void {
+  closerRegistrar = fn;
+}
+
+export function _resetBrowserStateForTests(): void {
+  browserPromise = null;
+  closerRegistered = false;
+}
+
+export function _getBrowserForTests(): Promise<Browser> {
+  return getBrowser();
+}
 
 function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    browserPromise = chromium.launch();
+    const thisPromise: Promise<Browser> = launch();
+    browserPromise = thisPromise;
+    thisPromise
+      .then((browser) => {
+        browser.on('disconnected', () => {
+          if (browserPromise === thisPromise) browserPromise = null;
+        });
+        if (!closerRegistered) {
+          closerRegistered = true;
+          closerRegistrar('chromium', closeBrowser);
+        }
+      })
+      .catch((err) => {
+        console.error('[capture] chromium launch failed:', err);
+        if (browserPromise === thisPromise) browserPromise = null;
+      });
   }
   return browserPromise;
+}
+
+// D2: closes the cached browser (if any) and resets the cache so the next
+// getBrowser() relaunches; registered once as the 'chromium' shutdown
+// closer (see getBrowser() above). Idempotent: a second call finds nothing
+// cached and resolves immediately without calling close() again. Never
+// throws -- a rejecting close() is caught and logged here, because this
+// runs inside t1's runClosers() shutdown race, which cannot act on a
+// throw from an individual closer.
+export async function closeBrowser(): Promise<void> {
+  const current = browserPromise;
+  browserPromise = null;
+  if (!current) return;
+  try {
+    const browser = await current;
+    await browser.close();
+  } catch (err) {
+    console.error('[capture] closeBrowser failed:', err);
+  }
 }
 
 // Narrow structural subset of playwright's Page -- lets gotoWithRetry (and its
