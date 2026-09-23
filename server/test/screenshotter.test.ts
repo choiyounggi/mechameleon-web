@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Browser } from 'playwright';
 import {
   TargetHttpError,
+  _getBrowserForTests,
+  _resetBrowserStateForTests,
+  _setBrowserLauncherForTests,
+  _setCloserRegistrarForTests,
   clampCaptureHeight,
+  closeBrowser,
   gotoWithRetry,
   guardRoute,
   type GuardableRoute,
@@ -254,5 +260,171 @@ describe('gotoWithRetry', () => {
     expect(await outcome(299)).toBe('ok');
     expect(await outcome(199)).toBe('refused');
     expect(await outcome(300)).toBe('refused');
+  });
+});
+
+function makeFakeBrowser(onClose?: () => Promise<void>) {
+  let disconnectHandler: (() => void) | undefined;
+  const state = { closeCount: 0 };
+  const fake = {
+    on: (event: string, cb: () => void) => {
+      if (event === 'disconnected') disconnectHandler = cb;
+    },
+    close: async () => {
+      state.closeCount++;
+      if (onClose) await onClose();
+    },
+  };
+  return { browser: fake as unknown as Browser, disconnect: () => disconnectHandler?.(), state };
+}
+
+describe('browser lifecycle', () => {
+  let registrarCalls: Array<[string, () => Promise<void>]>;
+
+  beforeEach(() => {
+    registrarCalls = [];
+    _setCloserRegistrarForTests((name, close) => {
+      registrarCalls.push([name, close]);
+    });
+  });
+
+  afterEach(() => {
+    _resetBrowserStateForTests();
+  });
+
+  it('launches once and reuses the same browser on a second call', async () => {
+    let launchCount = 0;
+    const { browser } = makeFakeBrowser();
+    _setBrowserLauncherForTests(async () => {
+      launchCount++;
+      return browser;
+    });
+
+    const first = await _getBrowserForTests();
+    const second = await _getBrowserForTests();
+
+    expect(launchCount).toBe(1);
+    expect(first).toBe(browser);
+    expect(second).toBe(browser);
+  });
+
+  it('relaunches after a rejected launch (error path)', async () => {
+    let launchCount = 0;
+    const { browser } = makeFakeBrowser();
+    _setBrowserLauncherForTests(async () => {
+      launchCount++;
+      if (launchCount === 1) throw new Error('binary missing');
+      return browser;
+    });
+
+    await expect(_getBrowserForTests()).rejects.toThrow('binary missing');
+    const second = await _getBrowserForTests();
+
+    expect(launchCount).toBe(2);
+    expect(second).toBe(browser);
+  });
+
+  it('logs a [capture]-prefixed message distinguishing a launch failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    _setBrowserLauncherForTests(async () => {
+      throw new Error('binary missing');
+    });
+
+    await expect(_getBrowserForTests()).rejects.toThrow('binary missing');
+    await Promise.resolve(); // let the reject side-chain's .catch run
+
+    expect(errorSpy).toHaveBeenCalledWith('[capture] chromium launch failed:', expect.any(Error));
+    errorSpy.mockRestore();
+  });
+
+  it('relaunches after the live browser disconnects (normal)', async () => {
+    let launchCount = 0;
+    const first = makeFakeBrowser();
+    const second = makeFakeBrowser();
+    const browsers = [first.browser, second.browser];
+    _setBrowserLauncherForTests(async () => {
+      launchCount++;
+      return browsers[launchCount - 1];
+    });
+
+    const gotFirst = await _getBrowserForTests();
+    expect(gotFirst).toBe(first.browser);
+
+    first.disconnect();
+    const gotSecond = await _getBrowserForTests();
+
+    expect(launchCount).toBe(2);
+    expect(gotSecond).toBe(second.browser);
+    expect(gotSecond).not.toBe(gotFirst);
+  });
+
+  it('ignores a stale disconnected event from a superseded browser (boundary)', async () => {
+    let launchCount = 0;
+    const oldBrowser = makeFakeBrowser();
+    const newBrowser = makeFakeBrowser();
+    const browsers = [oldBrowser.browser, newBrowser.browser];
+    _setBrowserLauncherForTests(async () => {
+      launchCount++;
+      return browsers[launchCount - 1];
+    });
+
+    await _getBrowserForTests(); // launch 1 (oldBrowser)
+    _resetBrowserStateForTests(); // simulates the cache being superseded before oldBrowser's own disconnected event fires
+    const gotNew = await _getBrowserForTests(); // launch 2 (newBrowser)
+    expect(gotNew).toBe(newBrowser.browser);
+
+    oldBrowser.disconnect(); // stale event, arrives after newBrowser already replaced it
+
+    const gotAfterStaleEvent = await _getBrowserForTests();
+    expect(launchCount).toBe(2); // no third launch triggered by the stale event
+    expect(gotAfterStaleEvent).toBe(newBrowser.browser);
+  });
+
+  it('registers the chromium closer exactly once across two launches', async () => {
+    let launchCount = 0;
+    const first = makeFakeBrowser();
+    const second = makeFakeBrowser();
+    const browsers = [first.browser, second.browser];
+    _setBrowserLauncherForTests(async () => {
+      launchCount++;
+      return browsers[launchCount - 1];
+    });
+
+    await _getBrowserForTests();
+    first.disconnect();
+    await _getBrowserForTests();
+
+    expect(launchCount).toBe(2);
+    expect(registrarCalls).toHaveLength(1);
+    expect(registrarCalls[0][0]).toBe('chromium');
+    expect(registrarCalls[0][1]).toBe(closeBrowser);
+  });
+
+  it('closeBrowser() with no browser ever launched resolves without calling close', async () => {
+    await expect(closeBrowser()).resolves.toBeUndefined();
+  });
+
+  it('closeBrowser() called twice calls the real close() once', async () => {
+    const { browser, state } = makeFakeBrowser();
+    _setBrowserLauncherForTests(async () => browser);
+    await _getBrowserForTests();
+
+    await closeBrowser();
+    await closeBrowser();
+
+    expect(state.closeCount).toBe(1);
+  });
+
+  it('closeBrowser() logs and still resolves when close() rejects (error path)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { browser } = makeFakeBrowser(async () => {
+      throw new Error('close failed');
+    });
+    _setBrowserLauncherForTests(async () => browser);
+    await _getBrowserForTests();
+
+    await expect(closeBrowser()).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith('[capture] closeBrowser failed:', expect.any(Error));
+    errorSpy.mockRestore();
   });
 });
